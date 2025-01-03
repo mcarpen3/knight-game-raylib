@@ -164,6 +164,7 @@ static void LoadSprites(Object *obj) {
     obj->spriteCnt = (size_t *)malloc(sizeof(int));
     char **sheets = getSpriteSheets(subdir, obj->spriteCnt);
     free(subdir);
+    printf("OBJECT: LoadSprites: spriteCnt: %ld", obj->spriteCnt);
     for (int i = 0; i < *obj->spriteCnt; ++i) {
         obj->sprites = realloc(obj->sprites, i + 1 * sizeof(Sprite *));
         obj->sprites[i] = SpriteFactory(sheets[i], obj->w, obj->h, obj->scale);

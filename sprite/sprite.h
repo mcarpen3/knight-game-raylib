@@ -4,6 +4,7 @@
 #include <string.h>
 
 struct Sprite {
+    char *name;
     Texture2D t;
     int w;
     int h;
@@ -17,8 +18,10 @@ typedef struct Sprite Sprite;
 
 static Rectangle GetScaledDest(Sprite *sprite, Rectangle dest);
 
-Sprite * SpriteFactory(const char *file, int w, int h, float scale) {
+Sprite * SpriteFactory(const char *file, int w, int h, float scale, char *basefn) {
+    // printf("Loading texture...%s, %d, %d, %f\n", file, w, h, scale);
     Sprite *sprite = (Sprite*)malloc(sizeof(Sprite));
+    sprite->name = strdup(basefn);
     sprite->t = LoadTexture(file);
     sprite->w = w;
     sprite->h = h;
@@ -34,6 +37,7 @@ Sprite * SpriteFactory(const char *file, int w, int h, float scale) {
 
 void UnloadSprite(Sprite *sprite) {
     UnloadTexture(sprite->t);
+    free(sprite->name);
     return free(sprite);
 }
 

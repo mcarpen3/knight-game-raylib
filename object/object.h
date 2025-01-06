@@ -5,6 +5,8 @@
 #include <math.h>
 #include "../sprite/sprite.h"
 #include "../resources/getSpriteFiles.c"
+#include "../util/path.c"
+#include "actions.h"
 
 #define MAX_VELOCITY    10.0f
 #define ACCEL           0.4f
@@ -25,7 +27,7 @@
 #define HEIGHT          80
 #define RADIUS          30.0f
 
-#define SPRITE_ROOT     "/home/matt/Documents/c/raylib/spritesheets"
+#define SPRITE_ROOT "/home/matt/Documents/c/raylib/spritesheets"
 
 static float Clamp(float value, float min, float max);
 
@@ -46,14 +48,19 @@ struct Object {
     unsigned char jc;
     Sprite **sprites;
     size_t *spriteCnt;
+    char *act;
 };
 
 typedef struct Object Object;
+
 static void LoadSprites(Object *obj);
+static void SetSprite(Object *obj);
+
 
 Object *ObjectFactory(const char *name, Vector2 pos) {
     Object *o = (Object *)malloc(sizeof(Object));
     o->name = strdup(name);
+    o->act = strdup(IDLE);
     o->pos.x = pos.x;
     o->pos.y = pos.y;
     o->scale = OBJECT_SCALE;
@@ -63,8 +70,6 @@ Object *ObjectFactory(const char *name, Vector2 pos) {
     o->rad = RADIUS;
     o->rot = 0.0f;
     o->rotVel = 0.0f;
-    LoadSprites(o);
-    o->sprite = o->sprites[0];
     o->w = WIDTH;
     o->h = HEIGHT;
     o->c = (Rectangle){
@@ -74,6 +79,11 @@ Object *ObjectFactory(const char *name, Vector2 pos) {
         o->h
     };
     o->jc = 0;
+    o->sprites = NULL;
+    LoadSprites(o);
+    o->sprite = o->sprites[0];
+    SetSprite(o);
+
     return o;
 }
 
@@ -97,6 +107,7 @@ void Update(Object *obj) {
     } else if (obj->vel.x > 0) {
         obj->sprite->rev = false;
     }
+    //SetSprite(obj);
 }
 void Draw(Object *obj) {
     // DrawRectangleLinesEx(obj->c, 1.0f, WHITE);
@@ -126,47 +137,76 @@ void Land(Object *obj) {
     if (obj->pos.y + obj->h / 2 < GetScreenHeight()) return;
     obj->jc = 0;
 }
-void RotateR(Object *obj) {
-    obj->rotVel = Clamp(obj->rotVel + ROTATE_ACCEL, -MAX_VELOCITY, MAX_VELOCITY);
-}
-void RotateL(Object *obj) {
-    obj->rotVel = Clamp(obj->rotVel - ROTATE_ACCEL, -MAX_VELOCITY, MAX_VELOCITY);
-}
+
 static float Clamp(float value, float min, float max) {
     if (value > max) return max;
     if (value < min) return min;
     return value;
 }
 void Destroy(Object *obj) {
-    UnloadSprite(obj->sprite);
+    for (int i = 0; i < *obj->spriteCnt; ++i) {
+        UnloadSprite(obj->sprites[i]);
+    }
+    free(obj->spriteCnt);
     free(obj->name);
-
+    free(obj->act);
     free(obj);
     printf("INFO: Object freed successfully!\n");
 }
-void Grow(Object *obj) {
-    obj->sprite->s += SCALAR;
-    if (obj->sprite->s >= MAX_SCALE) {
-        obj->sprite->s = MAX_SCALE;
+
+void SetSprite(Object *obj) {
+    char *act;
+    if (obj->vel.y < 0) {
+        act = strdup(JUMP);
+    } else if (obj->vel.x != 0) {
+        act = strdup(RUN);
+    } else {
+        act = strdup(IDLE);
     }
-}
-void Shrink(Object *obj) {
-    obj->sprite->s -= SCALAR;
-    if (obj->sprite->s < MIN_SCALE) {
-        obj->sprite->s = MIN_SCALE;
+    if (0 == strcmp(obj->act, act)) {
+        free(act);
+        return;
     }
+    for (int i = 0; i < *obj->spriteCnt; ++i) {
+        if (0 == strcmp(obj->sprites[i]->name, act)) {
+            obj->sprite = obj->sprites[i];
+            obj->act = strdup(act);
+            free(act);
+            return;
+        }
+    }
+    obj->sprite = obj->sprites[0];
+    free(obj->act);
+    obj->act = strdup(act);
+    free(act);
 }
 
 static void LoadSprites(Object *obj) {
-    printf("%s/%s %ld, %ld", SPRITE_ROOT, obj->name, strlen(SPRITE_ROOT), strlen(obj->name));
+    //printf("%s/%s %ld, %ld\n", SPRITE_ROOT, obj->name, strlen(SPRITE_ROOT), strlen(obj->name));
     char *subdir = (char *)malloc(strlen(SPRITE_ROOT) + strlen(obj->name) + 2);
     sprintf(subdir, "%s/%s", SPRITE_ROOT, obj->name);
-    obj->spriteCnt = (size_t *)malloc(sizeof(int));
+    obj->spriteCnt = (size_t *)malloc(sizeof(size_t));
     char **sheets = getSpriteSheets(subdir, obj->spriteCnt);
     free(subdir);
-    printf("OBJECT: LoadSprites: spriteCnt: %ld", obj->spriteCnt);
+    printf("INFO: OBJECT: LoadSprites: spriteCnt: %lu\n", *obj->spriteCnt);
     for (int i = 0; i < *obj->spriteCnt; ++i) {
-        obj->sprites = realloc(obj->sprites, i + 1 * sizeof(Sprite *));
-        obj->sprites[i] = SpriteFactory(sheets[i], obj->w, obj->h, obj->scale);
+        obj->sprites = realloc(obj->sprites, (i + 1) * sizeof(Sprite *));
+        char *basefn = basename(sheets[i]);
+        obj->sprites[i] = SpriteFactory(sheets[i], obj->w, obj->h, obj->scale, basefn);
+        free(sheets[i]);
+        free(basefn);
     }
 }
+
+// void Grow(Object *obj) {
+//     obj->sprite->s += SCALAR;
+//     if (obj->sprite->s >= MAX_SCALE) {
+//         obj->sprite->s = MAX_SCALE;
+//     }
+// }
+// void Shrink(Object *obj) {
+//     obj->sprite->s -= SCALAR;
+//     if (obj->sprite->s < MIN_SCALE) {
+//         obj->sprite->s = MIN_SCALE;
+//     }
+// }

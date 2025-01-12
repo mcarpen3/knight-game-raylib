@@ -28,3 +28,4 @@
 #define WALLCLIMBNOMOVEMENT			"_WallClimbNoMovement.png"
 #define WALLHANG			"_WallHang.png"
 #define WALLSLIDE			"_WallSlide.png"
+#define NONE                "_None.png"

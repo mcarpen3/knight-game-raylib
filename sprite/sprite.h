@@ -6,31 +6,27 @@
 struct Sprite {
     char *name;
     Texture2D t;
-    int w;
-    int h;
+    float w;
+    float h;
     int cnt;
     Rectangle r;
-    float s;
     bool rev;
 };
 
 typedef struct Sprite Sprite;
 
-static Rectangle GetScaledDest(Sprite *sprite, Rectangle dest);
-
-Sprite * SpriteFactory(const char *file, int w, int h, float scale, char *basefn) {
+Sprite * SpriteFactory(const char *file, const char *name, float width, float height) {
     // printf("Loading texture...%s, %d, %d, %f\n", file, w, h, scale);
     Sprite *sprite = (Sprite*)malloc(sizeof(Sprite));
-    sprite->name = strdup(basefn);
+    sprite->name = strdup(name);
     sprite->t = LoadTexture(file);
-    sprite->w = w;
-    sprite->h = h;
-    sprite->cnt = sprite->t.width / w * sprite->t.height / h;
+    sprite->cnt = (sprite->t.width / width) * (sprite->t.height / height);
     sprite->r.x = 0.0f;
     sprite->r.y = 0.0f;
-    sprite->r.width = w;
-    sprite->r.height = h;
-    sprite->s = scale;
+    sprite->r.width = sprite->t.width / sprite->cnt;
+    sprite->r.height = sprite->t.height;
+    sprite->w = width;
+    sprite->h = height;
     sprite->rev = false;
     return sprite;
 };
@@ -42,30 +38,21 @@ void UnloadSprite(Sprite *sprite) {
 }
 
 void DrawSprite(Sprite *sprite, Rectangle dest) {
-    Rectangle scaledDest = GetScaledDest(sprite, dest);
-    // DrawRectanglePro(scaledDest, (Vector2){-dest.width / 2, dest.height /2}, 0.0f, BLACK);
-    // DrawRectangleLinesEx(dest, 2.0f, RED);
+    // DrawRectanglePro(dest, (Vector2){0.0f, 0.0f}, 0.0f, BLACK);
+    DrawRectangleLinesEx(dest, 2.0f, RED);
     if (sprite->rev == false) {
-        DrawTexturePro(sprite->t, sprite->r, scaledDest, (Vector2){-dest.width / 2, dest.height / 2}, 0.0f, WHITE);        
+        DrawTexturePro(sprite->t, sprite->r, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);        
     } else {
         DrawTexturePro(sprite->t, (Rectangle){
             sprite->r.x, sprite->r.y, -sprite->r.width, sprite->r.height
-        }, scaledDest, (Vector2){-dest.width / 2, dest.height / 2}, 0.0f, WHITE);
+        }, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
     }
+    // DrawTexturePro(sprite->t, sprite->r, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
 }
 
 void FrameAdvance(Sprite *sprite) {
     sprite->r.x += sprite->w;
     if (sprite->r.x >= sprite->t.width) {
-        sprite->r.x = 0;
+        sprite->r.x = 0.0f;
     }
-}
-
-static Rectangle GetScaledDest(Sprite *sprite, Rectangle dest) {
-    return (Rectangle){
-        dest.x - dest.width * sprite->s / 2,
-        dest.y - dest.height * sprite->s / 2,
-        dest.width * sprite->s,
-        dest.height * sprite->s
-    };
 }

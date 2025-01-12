@@ -13,13 +13,15 @@ int main(void)
     // Initialization
     //--------------------------------------------------------------------------------------
     srand(time(NULL));
-    const int screenWidth = 1920;
-    const int screenHeight = 1080;
+    const int screenWidth = 3200;
+    const int screenHeight = 1800;
     char *info = (char *)malloc(256);
 
-    InitWindow(screenWidth, screenHeight, "raylib [texture] example - sprite anim");
+    InitWindow(screenWidth, screenHeight, "Knight HERO game!!!!");
     // NOTE: Textures MUST be loaded after Window initialization (OpenGL context is required)
-    Object *o = ObjectFactory("knight", (Vector2){(float)screenWidth/2, (float)screenHeight/2});
+    Object *o = ObjectFactory("knight", (Vector2){(float)screenWidth/2, (float)screenHeight/2}, (Vector2){120.0f, 80.0f});
+    Object *skeleton = ObjectFactory("skeleton", (Vector2){(float)screenWidth / 3, (float)screenHeight /2}, (Vector2){64.0f, 48.0f});
+    Object *curObj = o;
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
     // Main game loop
@@ -27,20 +29,46 @@ int main(void)
     {
         // Update
         //----------------------------------------------------------------------------------
-        if (IsKeyDown(KEY_RIGHT)) Forward(o);
-        if (IsKeyDown(KEY_LEFT)) Backward(o);
-        if (IsKeyUp(KEY_RIGHT) && IsKeyUp(KEY_LEFT)) Decel(o);
-        if (IsKeyDown(KEY_SPACE)) Jump(o);
-        if (IsKeyUp(KEY_SPACE)) Land(o);
+        if (IsKeyPressed(KEY_S)) {
+            if (curObj == o) {
+                curObj = skeleton;
+            } else {
+                curObj = o;
+            }
+        }
+        if (IsKeyDown(KEY_LEFT_CONTROL)) {
+            ScaleSprite(curObj);
+        } else if (IsKeyDown(KEY_LEFT_SHIFT)) {
+            ScaleCollider(curObj);
+        } else if (IsKeyDown(KEY_LEFT_ALT)) {
+            ShiftOffset(curObj);
+        } else {
+            if (IsKeyDown(KEY_RIGHT)) Forward(curObj);
+            else if (IsKeyDown(KEY_LEFT)) Backward(curObj);
+            else Decel(curObj);
+            if (IsKeyDown(KEY_UP)) Jump(curObj);
+            if (IsKeyDown(KEY_SPACE)) Attack(curObj);
+            if (IsKeyUp(KEY_SPACE) && IsKeyUp(KEY_UP)) {
+                Rest(curObj);
+            }
+        }
+
         Update(o);
-        sprintf(info, "x: %.3f | y: %.3f | vx: %.3f | vy: %.3f | rev: %s | jmp %d", 
-            o->pos.x, o->pos.y, o->vel.x, o->vel.y, o->sprite->rev ? "true" : "false", o->jc);
+        Update(skeleton);
+        // sprintf(info, "posx: %.3f | posy: %.3f | recx: %.3f | recy: %.3f | recw: %.3f | recy: %.3f", 
+        //     o->pos.x, o->pos.y, o->c.x, o->c.y, o->c.width, o->c.height);
+        sprintf(info, "%s: scale: %.3f, scalex: %.3f, scaley: %.3f, offsetx: %.3f", 
+            curObj->name, curObj->spriteScale, curObj->dscale.x, curObj->dscale.y, curObj->offsetX);
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
-            DrawText(info, 0, 0, 30, WHITE);
             ClearBackground(DARKBLUE);
+            DrawText(info, 2, 60, 40, WHITE);
+            DrawText("HOLD L_CTRL AND USE ARROWS TO SCALE SPRITE", 2, 60 + 40 + 2, 40, WHITE);
+            DrawText("HOLD L_ALT AND USE ARROWS TO SCALE COLLIDER", 2, 60 + 40 * 2 + 2, 40, WHITE);
+            DrawText("HOLD L_SHIFT AND USE ARROWS TO OFFSET COLLIDER", 2, 60 + 40 * 3 + 2, 40, WHITE);
             Draw(o);
+            Draw(skeleton);
         EndDrawing();
         //----------------------------------------------------------------------------------
     }

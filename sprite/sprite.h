@@ -39,7 +39,7 @@ void UnloadSprite(Sprite *sprite) {
 
 void DrawSprite(Sprite *sprite, Rectangle dest) {
     // DrawRectanglePro(dest, (Vector2){0.0f, 0.0f}, 0.0f, BLACK);
-    DrawRectangleLinesEx(dest, 2.0f, RED);
+    // DrawRectangleLinesEx(dest, 2.0f, RED);
     if (sprite->rev == false) {
         DrawTexturePro(sprite->t, sprite->r, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);        
     } else {

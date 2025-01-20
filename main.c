@@ -13,15 +13,19 @@ int main(void)
     // Initialization
     //--------------------------------------------------------------------------------------
     srand(time(NULL));
-    const int screenWidth = 3200;
-    const int screenHeight = 1800;
+    const int screenWidth = 1920;
+    const int screenHeight = 1080;
     char *info = (char *)malloc(256);
 
     InitWindow(screenWidth, screenHeight, "Knight HERO game!!!!");
+    float maxHeight = (float)GetScreenHeight();
     // NOTE: Textures MUST be loaded after Window initialization (OpenGL context is required)
-    Object *o = ObjectFactory("knight", (Vector2){(float)screenWidth/2, (float)screenHeight/2}, (Vector2){120.0f, 80.0f});
+    Object *o = ObjectFactory("knight", (Vector2){(float)screenWidth/2, (float)screenHeight}, (Vector2){120.0f, 80.0f});
     Object *skeleton = ObjectFactory("skeleton", (Vector2){(float)screenWidth / 3, (float)screenHeight /2}, (Vector2){64.0f, 48.0f});
     Object *curObj = o;
+    Rectangle r0 = {.x = 0, .y = GetScreenHeight() - 140.0f, .width = 180.0f, .height = 140.0f};
+    Rectangle r1 = {.x = GetScreenWidth() - 110.0f, .y = GetScreenHeight() - 180.0f, .width = 110.0f, .height = 180.0f};
+    Rectangle rs[] = {r0, r1};
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
     // Main game loop
@@ -35,6 +39,15 @@ int main(void)
             } else {
                 curObj = o;
             }
+        }
+        if (IsKeyPressed(KEY_B)) {
+            curObj->setBounds = !curObj->setBounds;
+        }
+        if (IsKeyPressed(KEY_N) && curObj->setBounds) {
+            FrameAdvance(curObj->sprite);
+        }
+        if (IsKeyPressed(KEY_ENTER)) {
+            SaveObjectParams(curObj);
         }
         if (IsKeyDown(KEY_LEFT_CONTROL)) {
             ScaleSprite(curObj);
@@ -52,23 +65,30 @@ int main(void)
                 Rest(curObj);
             }
         }
-
+        EnvCollision(o, &rs, 2);
         Update(o);
         Update(skeleton);
+        if (o->c.y + o->c.height < maxHeight) {
+            maxHeight = o->c.y + o->c.height;
+        }
         // sprintf(info, "posx: %.3f | posy: %.3f | recx: %.3f | recy: %.3f | recw: %.3f | recy: %.3f", 
         //     o->pos.x, o->pos.y, o->c.x, o->c.y, o->c.width, o->c.height);
-        sprintf(info, "%s: scale: %.3f, scalex: %.3f, scaley: %.3f, offsetx: %.3f", 
-            curObj->name, curObj->spriteScale, curObj->dscale.x, curObj->dscale.y, curObj->offsetX);
+        // sprintf(info, "%s: scale: %.3f, colx: %.3f, coly: %.3f, offsetx: %.3f", 
+        //     curObj->name, curObj->spriteScale, curObj->dscale.x, curObj->dscale.y, curObj->offsetX);
+        sprintf(info, "xmin: %.3f, xmax: %.3f, ymin: %.3f, ymax: %.3f", 
+            o->ob.xmin, o->ob.xmax, o->ob.ymin, o->ob.ymax);
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
             ClearBackground(DARKBLUE);
             DrawText(info, 2, 60, 40, WHITE);
-            DrawText("HOLD L_CTRL AND USE ARROWS TO SCALE SPRITE", 2, 60 + 40 + 2, 40, WHITE);
-            DrawText("HOLD L_ALT AND USE ARROWS TO SCALE COLLIDER", 2, 60 + 40 * 2 + 2, 40, WHITE);
-            DrawText("HOLD L_SHIFT AND USE ARROWS TO OFFSET COLLIDER", 2, 60 + 40 * 3 + 2, 40, WHITE);
+            // DrawText("HOLD L_CTRL AND USE ARROWS TO SCALE SPRITE", 2, 60 + 40 + 2, 40, WHITE);
+            // DrawText("HOLD L_ALT AND USE ARROWS TO SCALE COLLIDER", 2, 60 + 40 * 2 + 2, 40, WHITE);
+            // DrawText("HOLD L_SHIFT AND USE ARROWS TO OFFSET COLLIDER", 2, 60 + 40 * 3 + 2, 40, WHITE);
             Draw(o);
             Draw(skeleton);
+            DrawRectangleRec(r0, WHITE);
+            DrawRectangleRec(r1, WHITE);
         EndDrawing();
         //----------------------------------------------------------------------------------
     }

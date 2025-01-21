@@ -132,7 +132,7 @@ void EnvCollision(Object *obj, Rectangle *r, int count)
     {
         if (CheckCollisionRecs(obj->d, r[i]))
         {   colliding = true;
-            if (obj->d.y + obj->d.height < r[i].y + r[i].height / 2)
+            if (obj->d.y + obj->d.height < r[i].y + r[i].height * 0.05f)
             {
                 // obj collider is above r rectangle
                 obj->ob.ymax = r[i].y - obj->c.height / 2 + 1;
@@ -144,19 +144,17 @@ void EnvCollision(Object *obj, Rectangle *r, int count)
                 if (obj->d.x > r[i].x + r[i].width / 2)
                 {
                     obj->ob.xmin = r[i].x + r[i].width + obj->d.width / 2 - 1;
-                    obj->ob.xmax = GetScreenWidth() - obj->d.width / 2;
                 }
                 else if (obj->d.x + obj->d.width < r[i].x + r[i].width / 2)
                 {
-                    obj->ob.xmin = obj->d.width / 2;
                     obj->ob.xmax = r[i].x - obj->d.width / 2 + 1;
                 }
             }
         }
     }
     if (colliding == false) {
-        obj->ob.xmin = obj->c.width / 2;
-        obj->ob.xmax = GetScreenWidth() - obj->c.width / 2;
+        obj->ob.xmin = -(GetScreenWidth() * 2);
+        obj->ob.xmax = GetScreenWidth() * 2;
         obj->ob.ymin = obj->c.height / 2;
         obj->ob.ymax = GetScreenHeight() - obj->c.height / 2;
     }
@@ -193,8 +191,8 @@ void Update(Object *obj)
 
 void Draw(Object *obj)
 {
-    DrawRectangleLinesEx(obj->c, 1.0f, WHITE);
-    DrawRectangleLinesEx(obj->d, 1.0f, GREEN);
+    // DrawRectangleLinesEx(obj->c, 1.0f, WHITE);
+    // DrawRectangleLinesEx(obj->d, 1.0f, GREEN);
     // DrawCircle(obj->pos.x, obj->pos.y, obj->rad, WHITE);
     DrawSprite(obj->sprite, (Rectangle){
                                 obj->pos.x - obj->originDims.x * obj->spriteScale / 2,

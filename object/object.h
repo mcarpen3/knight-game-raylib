@@ -19,7 +19,7 @@
 #define MAX_JMP_CNT 15
 
 #define SCALAR 0.1f
-#define MAX_SCALE 10.0f
+#define MAX_SCALE 20.0f
 #define MIN_SCALE 0.5f
 
 #define OBJECT_SCALE 3.0f
@@ -38,6 +38,13 @@ typedef struct ObjectBounds
     float ymin;
     float ymax;
 } ObjectBounds;
+
+typedef struct ObjVelLims {
+    float xmin;
+    float xmax;
+    float ymin;
+    float ymax;
+} ObjVelLims;
 
 struct Object
 {
@@ -65,6 +72,8 @@ struct Object
     bool setBounds;
     char *paramsPath;
     ObjectBounds ob;
+    ObjVelLims ov;
+    bool alive;
 };
 
 typedef struct Object Object;
@@ -115,7 +124,14 @@ Object *ObjectFactory(const char *name, Vector2 pos, Vector2 origDims)
         GetScreenWidth() - o->c.width / 2,
         o->c.height / 2,
         GetScreenHeight() - o->c.height / 2};
+    o->ov = (ObjVelLims) {
+        .xmax = MAX_VELOCITY,
+        .xmin = -MAX_VELOCITY,
+        .ymin = -MAX_JMP_VEL,
+        .ymax = MAX_GRAVITY
+    };
     LoadObjectParams(o);
+    o->alive = true;
     return o;
 }
 
@@ -125,44 +141,64 @@ void SetPosition(Object *obj, Vector2 pos)
     obj->pos.y = pos.y;
 }
 
-void EnvCollision(Object *obj, Rectangle *r, int count)
+void EnvCollision(Object *obj, Rectangle r[3], int count)
 {
     bool colliding = false;
     for (int i = 0; i < count; ++i)
     {
         if (CheckCollisionRecs(obj->d, r[i]))
-        {   colliding = true;
+        {
+            colliding = true;
             if (obj->d.y + obj->d.height < r[i].y + r[i].height * 0.05f)
             {
                 // obj collider is above r rectangle
-                obj->ob.ymax = r[i].y - obj->c.height / 2 + 1;
+                // obj->ob.ymax = r[i].y - obj->c.height / 2 + 1;
+                obj->ov.ymax = 0.0f;
+                obj->ov.ymin = -MAX_JMP_VEL;
             }
             else
             {
                 // obj collider is beside the rectangle
-                obj->ob.ymax = GetScreenHeight() - obj->c.height / 2;
+                // obj->ob.ymax = GetScreenHeight() - obj->c.height / 2;
+                obj->ov.ymax = MAX_GRAVITY;
                 if (obj->d.x > r[i].x + r[i].width / 2)
                 {
-                    obj->ob.xmin = r[i].x + r[i].width + obj->d.width / 2 - 1;
+                    // obj->ob.xmin = r[i].x + r[i].width + obj->d.width / 2 - 1;
+                    obj->ov.xmin = 0.0f;
                 }
                 else if (obj->d.x + obj->d.width < r[i].x + r[i].width / 2)
                 {
-                    obj->ob.xmax = r[i].x - obj->d.width / 2 + 1;
+                    // obj->ob.xmax = r[i].x - obj->d.width / 2 + 1;
+                    obj->ov.xmax = 0.0f;
                 }
             }
         }
     }
-    if (colliding == false) {
-        obj->ob.xmin = -(GetScreenWidth() * 2);
-        obj->ob.xmax = GetScreenWidth() * 2;
-        obj->ob.ymin = obj->c.height / 2;
-        obj->ob.ymax = GetScreenHeight() - obj->c.height / 2;
+    if (colliding == false)
+    {
+        // obj->ob.xmin = 0;
+        // obj->ob.xmax = GetScreenWidth() * 2;
+        // obj->ob.ymin = obj->c.height / 2;
+        // obj->ob.ymax = GetScreenHeight() - obj->c.height / 2;
+        obj->ov.xmax = MAX_VELOCITY;
+        obj->ov.xmin = -MAX_VELOCITY;
+        obj->ov.ymin = -MAX_JMP_VEL;
+        obj->ov.ymax = MAX_GRAVITY;
+    }
+}
+
+void EnemyCollision(Object *player, Object *enemy)
+{
+    if (CheckCollisionRecs(player->d, enemy->d) && player->attack)
+    {
+        enemy->alive = false;
     }
 }
 
 void Update(Object *obj)
 {
-    obj->vel.y = Clamp(obj->vel.y + ACCEL, -MAX_JMP_VEL, MAX_GRAVITY); // gravity always in effect
+    obj->vel.y = Clamp(obj->vel.y + ACCEL, obj->ov.ymin, obj->ov.ymax); // gravity always in effect
+    obj->vel.x = Clamp(obj->vel.x, obj->ov.xmin, obj->ov.xmax);
     obj->pos.x = Clamp(obj->pos.x + obj->vel.x, obj->ob.xmin, obj->ob.xmax);
     obj->pos.y = Clamp(obj->pos.y + obj->vel.y, obj->ob.ymin, obj->ob.ymax);
     obj->c.x = obj->pos.x - (obj->originDims.x / 2);
@@ -192,7 +228,7 @@ void Update(Object *obj)
 void Draw(Object *obj)
 {
     // DrawRectangleLinesEx(obj->c, 1.0f, WHITE);
-    // DrawRectangleLinesEx(obj->d, 1.0f, GREEN);
+    DrawRectangleLinesEx(obj->d, 1.0f, GREEN);
     // DrawCircle(obj->pos.x, obj->pos.y, obj->rad, WHITE);
     DrawSprite(obj->sprite, (Rectangle){
                                 obj->pos.x - obj->originDims.x * obj->spriteScale / 2,
@@ -203,12 +239,12 @@ void Draw(Object *obj)
 
 void Forward(Object *obj)
 {
-    obj->vel.x = Clamp(obj->vel.x + ACCEL, -MAX_VELOCITY, MAX_VELOCITY);
+    obj->vel.x = obj->vel.x + ACCEL;
 }
 
 void Backward(Object *obj)
 {
-    obj->vel.x = Clamp(obj->vel.x - ACCEL, -MAX_VELOCITY, MAX_VELOCITY);
+    obj->vel.x = obj->vel.x - ACCEL;
 }
 
 void Jump(Object *obj)
@@ -216,7 +252,7 @@ void Jump(Object *obj)
     if (obj->jc >= MAX_JMP_CNT)
         return;
     obj->jc++;
-    obj->vel.y = Clamp(obj->vel.y - JMP_ACCL, -MAX_JMP_VEL, 0.0f);
+    obj->vel.y = obj->vel.y - JMP_ACCL;
 }
 
 void Attack(Object *obj)
@@ -226,20 +262,20 @@ void Attack(Object *obj)
 
 void Decel(Object *obj)
 {
-    if (obj->vel.x > 0)
+    if (obj->vel.x > 0.0f)
     {
-        obj->vel.x = Clamp(obj->vel.x - ACCEL, 0.0f, MAX_VELOCITY);
+        obj->vel.x = Clamp(obj->vel.x - ACCEL, 0.0f, obj->ov.xmax);
     }
-    else
+    else if (obj->vel.x < 0.0f)
     {
-        obj->vel.x = Clamp(obj->vel.x + ACCEL, -MAX_VELOCITY, 0.0f);
+        obj->vel.x = Clamp(obj->vel.x + ACCEL, obj->ov.xmin, 0.0f);
     }
 }
 
 void Rest(Object *obj)
 {
     obj->attack = false;
-    if (obj->pos.y + obj->c.height / 2 < obj->ob.ymax)
+    if (obj->vel.y < 0.0f)
     {
         obj->jc = MAX_JMP_CNT;
     }
@@ -295,7 +331,7 @@ void ScaleCollider(Object *obj)
     }
 }
 
-void ShiftOffset(Object *obj)
+void ShiftColliderOffset(Object *obj)
 {
     if (IsKeyDown(KEY_RIGHT))
     {
@@ -322,6 +358,10 @@ static void SetSprite(Object *obj)
     if (obj->attack)
     {
         act = strdup(ATTACK);
+    }
+    else if (!obj->alive)
+    {
+        act = strdup(DEATH);
     }
     else if (obj->vel.y < 0)
     {

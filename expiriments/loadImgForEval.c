@@ -7,6 +7,7 @@
 #include "../datastructs/linkedlist.h"
 
 #define MAX_INPUT_CHARS 16
+#define ARRAY_LEN(x)(sizeof(x) / sizeof((x)[0]))
 
 typedef struct SpriteRect
 {
@@ -15,17 +16,26 @@ typedef struct SpriteRect
 } SpriteRect;
 
 void DestroySpriteRect(SpriteRect *sr);
-static void DisplaySavedRects(List *rectlist, Texture t, Vector2 origin);
+static void DisplaySavedRects(List *rectlist, Texture t, Vector2 origin, ListElmt *selected);
 
 int main(void)
 {
     const char *spritesheet = "../spritesheets/background/terrain.png";
     bool namingSprite = false;
+    bool clearInput = false;
     const int screenWidth = 1920;
     const int screenHeight = 1080;
     float panSpeed = 5.0f;
     char *info = (char *)malloc(256);
-    char *instructions = "Scroll to zoom. LEFT click/drag: draw rectangle. 'R': save rect.";
+    char *instructions[] = {
+        "MOUSESCROLL=zoom", 
+        "LEFT click/drag=draw", 
+        "'R'=name rect",
+        "'ENTER'=save rect",
+        "'Q'=save sheet",
+        "WASD=pan",
+        "PGDN=Select Saved Rect."
+    };
     // char *stats = (char *)malloc(256);
 
     InitWindow(screenWidth, screenHeight, "SpriteSheetSlicer!");
@@ -47,11 +57,16 @@ int main(void)
     float fontSize = 30.0f;
     int key;
     list_init(rectlist, (void *)DestroySpriteRect);
+    ListElmt *curElmt = rectlist->head;
+    
+    char *inputPrompt = "ENTER SPRITE NAME: ";
 
     while (!WindowShouldClose())
     {
-        sprintf(info, "Rect. { x: %.2f, y: %.2f, w: %.2f, h: %.2f }", r.x, r.y, r.width, r.height);
-        camera.zoom += ((float)GetMouseWheelMove() * 0.2f);
+        sprintf(info, "Rect. { x: %.2f, y: %.2f, w: %.2f, h: %.2f }, zoom: %f", 
+            r.x, r.y, r.width, r.height, camera.zoom);
+        camera.zoom = Clamp(camera.zoom + (float)GetMouseWheelMove() * 0.2f, 1.0f, 16.0f);
+
         // Get the world point that is under the mouse
         Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
 
@@ -64,6 +79,13 @@ int main(void)
 
         if (namingSprite)
         {
+            if (clearInput) {
+                key = GetCharPressed();
+                while (key > 0) {
+                    key = GetCharPressed();
+                }
+                clearInput = false;
+            }
             if (IsKeyPressed(KEY_ENTER) && letterCount > 0)
             {
                 SpriteRect *sptr = (SpriteRect *)malloc(sizeof(SpriteRect));
@@ -77,11 +99,11 @@ int main(void)
                 list_ins_next(rectlist, NULL, sptr);
                 name[0] = '\0';
                 letterCount = 0;
+                clearInput = false;
                 continue;
             }
             // Get char pressed (unicode character) on the queue
             key = GetCharPressed();
-
             // Check if more characters have been pressed on the same frame
             while (key > 0)
             {
@@ -102,8 +124,7 @@ int main(void)
                     letterCount = 0;
                 name[letterCount] = '\0';
             }
-            sprintf(input, "INPUT: %s", name);
-            DrawText(input, 4, GetScreenHeight() - fontSize, fontSize, WHITE);
+            sprintf(input, "%s%s", inputPrompt, name);
         } else {
 
             if (IsKeyDown(KEY_A))
@@ -135,6 +156,35 @@ int main(void)
             if (IsKeyPressed(KEY_R))
             {
                 namingSprite = true;
+                clearInput = true;
+            }
+            if (IsKeyPressed(KEY_PAGE_DOWN) && rectlist->size > 0) {
+                if (curElmt == NULL) {
+                    curElmt = rectlist->head;
+                } else if (curElmt->next == NULL) {
+                    curElmt = rectlist->head;
+                } else {
+                    curElmt = curElmt->next;
+                }
+            }
+            if (IsKeyPressed(KEY_DELETE) && rectlist->size > 0) {
+                ListElmt *tmp = rectlist->head;
+                SpriteRect *tmpRect = (SpriteRect *)malloc(sizeof(SpriteRect));
+                tmpRect->r = (Rectangle *)malloc(sizeof(Rectangle));
+                tmpRect->name = (char *)malloc(64);
+                if (tmp == curElmt) {
+                    list_rem_next(rectlist, NULL, (void *)&tmpRect);
+                } else {
+                    while(tmp->next != curElmt) {
+                        tmp = tmp->next;
+                    }
+                    list_rem_next(rectlist, tmp, (void *)&tmpRect);
+                }
+                curElmt = rectlist->head;
+                printf("deleted %s\n", tmpRect->name);
+                free(tmpRect->name);
+                free(tmpRect->r);
+                free(tmpRect);
             }
         }
         BeginDrawing();
@@ -146,10 +196,15 @@ int main(void)
         DrawRectangleLines(r.x, r.y, r.width, r.height, GREEN);
         DrawRectangleLines(textureoffset.x, textureoffset.y, t.width, t.height, RED);
         EndMode2D();
-
+        if (namingSprite) {
+            DrawText(input, 4, GetScreenHeight() - fontSize, fontSize, WHITE);
+            DrawRectangleLines(2, GetScreenHeight() - fontSize - 4, (strlen(inputPrompt) + MAX_INPUT_CHARS) * MeasureTextEx(GetFontDefault(), "M", fontSize,1).x, fontSize + 2, RED);
+        }
         DrawText(info, 4, 0, 40, RAYWHITE);
-        DrawText(instructions, 4, 40, 40, RAYWHITE);
-        DisplaySavedRects(rectlist, t, center);
+        for (int i = 0; i < ARRAY_LEN(instructions); ++i) {
+            DrawText(instructions[i], 4, 40 + (i * (fontSize + 10)), 40, RAYWHITE);
+        }
+        DisplaySavedRects(rectlist, t, center, curElmt);
         EndDrawing();
     }
     UnloadTexture(t);
@@ -164,7 +219,7 @@ void DestroySpriteRect(SpriteRect *sr)
     free(sr->r);
 }
 
-static void DisplaySavedRects(List *rectlist, Texture t, Vector2 origin)
+static void DisplaySavedRects(List *rectlist, Texture t, Vector2 origin, ListElmt *selected)
 {
     float xmargin = 200.0f;
     float yidx = 0.0f;
@@ -187,7 +242,9 @@ static void DisplaySavedRects(List *rectlist, Texture t, Vector2 origin)
             .height = sr->r->height * xscale,
         };
         DrawTexturePro(t, src, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
-        DrawRectangleLinesEx(dest, 2.0f, GREEN);
+        if (el == selected) {
+            DrawRectangleLinesEx(dest, 2.0f, GREEN);
+        }
         DrawText(sr->name, dest.x, dest.y, 20, WHITE);
         yidx += sr->r->height * xscale;
         el = el->next;

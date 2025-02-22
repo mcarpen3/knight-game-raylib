@@ -1,3 +1,5 @@
+#ifndef SPRITE_H
+#define SPRITE_H
 #include <raylib.h>
 #include <stdlib.h>
 #define _GNU_SOURCE 1
@@ -14,6 +16,18 @@ struct Sprite {
 };
 
 typedef struct Sprite Sprite;
+
+typedef struct SpriteRect
+{
+    char *name;
+    char *filename;
+    Rectangle r;
+    Texture2D texture;
+    int frameCount;
+    int frameIdx;
+    int frameCounter;
+    List *colliders;
+} SpriteRect;
 
 Sprite * SpriteFactory(const char *file, const char *name, float width, float height) {
     // printf("Loading texture...%s, %d, %d, %f\n", file, w, h, scale);
@@ -56,3 +70,4 @@ void FrameAdvance(Sprite *sprite) {
         sprite->r.x = 0.0f;
     }
 }
+#endif // SPRITE_H

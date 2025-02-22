@@ -6,12 +6,13 @@
 #include "../datastructs/linkedlist.h"
 #include "../datastructs/doublelinkedlist.h"
 #include "../util/AutoGetSpriteRect.c"
+#include "../sprite/sprite.h"
 
 #define MAX_INPUT_CHARS 16
 #define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
 #define SHEET_PAD 8
-#define SCREEN_WIDTH 1280
-#define SCREEN_HEIGHT 800
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
 #define WORLD_WIDTH (SCREEN_WIDTH) * (4)
 #define WORLD_HEIGHT SCREEN_HEIGHT
 #define SCALE_FACTOR 0.2f
@@ -21,6 +22,7 @@
 #define EL_PADDING 6.0f
 #define FONTLG 30.0f
 #define FONTSM 20.0f
+#define CARD_DIM 160.0f
 
 typedef struct SpriteSheet
 {
@@ -31,18 +33,6 @@ typedef struct SpriteSheet
     Vector2 offset;
     DListElmt *selectedRect;
 } SpriteSheet;
-
-typedef struct SpriteRect
-{
-    char *name;
-    char *filename;
-    Rectangle r;
-    Texture2D texture;
-    int frameCount;
-    int frameIdx;
-    int frameCounter;
-    List *colliders;
-} SpriteRect;
 
 typedef struct Object_ {
     char *name;
@@ -68,15 +58,16 @@ void DestroySpriteRect(SpriteRect *sr);
 void DestroySheet(SpriteSheet *ss);
 void DestroyColliderRect(Rectangle *crect);
 void DestroyObject(Object *obj);
-static void DrawSavedSprites(SpriteSheet *sheet);
-static void DrawSavedObjects(DList *objects, DListElmt *selected);
+static void DrawLoadedTextures(DList *textures, DListElmt *selected);
+static void DrawStoredSheetSpriteRects(SpriteSheet *sheet);
+static void DrawStoredObjsList(DList *objects, DListElmt *selected);
 static void DrawObjectSprites(Object *obj);
 static void SelfDestruct(DList *sheetList, List *level, DList *objects);
 static void PlaceObjectInWorld(List *placedObjects, Object *obj);
 
 static void DrawObject(Object *obj);
 static void RectInput(Rectangle *rect, Vector2 mouseWorldPos, SpriteSheet *curSheet);
-static void UpdateMode(int *mode);
+static void UpdateMode(int *mode, Rectangle *r);
 static bool GetTextInput(char *input, bool *clearBuffer, int *charCount);
 static void GetNumInput(int *input);
 static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int frameCount);
@@ -164,8 +155,12 @@ int main(void)
     Camera2D camera = {0};
     Vector2 center = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
     Rectangle r = (Rectangle){0};
-    Button autoBtn = InitButton("CreateColliders", (Vector2) {
+    Button autoBtn = InitButton("Create Colliders", (Vector2) {
         .x = SCREEN_WIDTH / 2,
+        .y = SCREEN_HEIGHT,
+    }, FONTLG);
+    Button rmvColliders = InitButton("Remove Colliders", (Vector2) {
+        .x = SCREEN_WIDTH / 4,
         .y = SCREEN_HEIGHT,
     }, FONTLG);
 
@@ -221,7 +216,7 @@ int main(void)
         }
         else
         {
-            UpdateMode(&mode);
+            UpdateMode(&mode, &r);
             if (IsKeyDown(KEY_A))
             {
                 camera.offset.x += panSpeed;
@@ -254,14 +249,14 @@ int main(void)
                 r.x = 0.0f;
                 r.y = 0.0f;
             }
-            if (IsKeyPressed(KEY_HOME))
+            if (IsKeyPressed(KEY_END))
             {
                 if (curSheet->sheetRects->size > 0)
                 {
                     curSheet->selectedRect = dlist_is_tail(curSheet->selectedRect) ? curSheet->sheetRects->head : curSheet->selectedRect->next;
                 }
             }
-            if (IsKeyPressed(KEY_END))
+            if (IsKeyPressed(KEY_HOME))
             {
                 if (curSheet->sheetRects->size > 0)
                 {
@@ -303,6 +298,12 @@ int main(void)
                 sprintf(info, "MODE: %s, File: \"%s\", Zoom: [%.2f]", modeStrs[mode], curSheet->basename, camera.zoom);
                 if (curSheet->selectedRect == NULL) {
                     autoBtn.disabled = true;
+                    rmvColliders.disabled = true;
+                } else {
+                    autoBtn.disabled = false;
+                    if (((SpriteRect *)curSheet->selectedRect->data)->colliders->size > 0) {
+                        rmvColliders.disabled = false;
+                    }
                 }
                 RectInput(&r, mouseWorldPos, curSheet);
                 if (IsKeyPressed(KEY_R) && curSheet->selectedRect != NULL)
@@ -311,24 +312,35 @@ int main(void)
                     SpriteRect *sptr = (SpriteRect *)curSheet->selectedRect->data;
                     Rectangle *tmpRect = (Rectangle *)malloc(sizeof(Rectangle));
                     *tmpRect = (Rectangle) {
-                        .x = r.x - curSheet->offset.x,
-                        .y = r.y - curSheet->offset.y,
+                        .x = r.x - (SCREEN_WIDTH / 2 - sptr->r.width / 2),
+                        .y = r.y - (SCREEN_HEIGHT / 2 - sptr->r.height / 2),
                         .width = r.width,
                         .height = r.height,
                     };
-                    list_ins_next(sptr->colliders, list_tail(sptr->colliders), (void *)tmpRect);
+                    list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpRect);
                 }
                 if (CheckCollisionPointRec(GetMousePosition(), autoBtn.destination)) {
                     autoBtn.hover = true;
                     if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && autoBtn.disabled == false) {
                         SpriteRect *sptr = (SpriteRect *)curSheet->selectedRect->data;
-                        list_destroy(sptr->colliders);
+                        
                         list_init(sptr->colliders, (void *)DestroyColliderRect);
-                        GetSpriteBounds(LoadImageFromTexture(sptr->texture), sptr->colliders);
+                        GetSpriteBounds(sptr, sptr->colliders);
                         printf("INFO: auto bounds found %d rects\n", sptr->colliders->size);
                     }
                 } else {
                     autoBtn.hover = false;
+                }
+                if (CheckCollisionPointRec(GetMousePosition(), rmvColliders.destination)) {
+                    rmvColliders.hover = true;
+                    if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && rmvColliders.disabled == false) {
+                        SpriteRect *sptr = (SpriteRect *)curSheet->selectedRect->data;
+                        printf("INFO: Removing %d\n", sptr->colliders->size);
+                        list_destroy(sptr->colliders);
+                        list_init(sptr->colliders, (void *)DestroyColliderRect);
+                    }
+                } else {
+                    rmvColliders.hover = false;
                 }
             }
             if (mode == 2)
@@ -383,7 +395,6 @@ int main(void)
                     }                    
                     if (curObj->sprites->size > 0) {
                         curObj->position = mouseWorldPos;
-                        SpriteRect *rect = (SpriteRect *)curObj->curSpriteEl;
                         if (IsKeyDown(KEY_UP))
                         {
                             curObj->scale = Clamp(curObj->scale + SCALE_FACTOR, 1.0f, 10.0f);
@@ -396,28 +407,33 @@ int main(void)
                         {
                             PlaceObjectInWorld(levelObjs, curObj);
                         }
-                        // if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-                        // {
-                        //     // drag the mouse to place more sprites adjacent to the currently placed one
-                        //     ListElmt *last = list_head(levelObjs);
-                        //     Object *placedObj = (Object *)last->data;
-                        //     SpriteRect *placed = (SpriteRect *)list_head(placedObj->sprites);
-                        //     if (!CheckCollisionRecs((Rectangle){
-                        //                                 .width = rect->r.width * curObj->scale,
-                        //                                 .height = rect->r.height * curObj->scale,
-                        //                                 .x = curObj->position.x - (rect->r.width * curObj->scale / 2),
-                        //                                 .y = curObj->position.y - (rect->r.height * curObj->scale / 2),
-                        //                             },
-                        //                             (Rectangle) {
-                        //                                 .width = placed->r.width * placedObj->scale,
-                        //                                 .height = placed->r.height * placedObj->scale,
-                        //                                 .x = placedObj->position.x - (placed->r.width * placedObj->scale / 2),
-                        //                                 .y = placedObj->position.y - (placed->r.height * placedObj->scale / 2)
-                        //                             }))
-                        //     {
-                        //         PlaceObjectInWorld(levelObjs, curObj);
-                        //     }
-                        // }
+                        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+                        {
+                            // drag the mouse to place more sprites adjacent to the currently placed one
+                            
+                            ListElmt *last = list_head(levelObjs);
+                            Object *placedObj = (Object *)last->data;
+                            SpriteRect *placed = (SpriteRect *)list_head(placedObj->sprites);
+                            SpriteRect *rect = (SpriteRect *)((Object *)curObjElmt->data)->curSpriteEl;
+                            Rectangle cr = (Rectangle){
+                                .width = rect->r.width * curObj->scale,
+                                .height = rect->r.height * curObj->scale,
+                                .x = curObj->position.x - (rect->r.width * curObj->scale / 2),
+                                .y = curObj->position.y - (rect->r.height * curObj->scale / 2),
+                            };
+                            Rectangle cp = (Rectangle) {
+                                .width = placed->r.width * placedObj->scale,
+                                .height = placed->r.height * placedObj->scale,
+                                .x = placedObj->position.x - (placed->r.width * placedObj->scale / 2),
+                                .y = placedObj->position.y - (placed->r.height * placedObj->scale / 2)
+                            };
+                            printf("cur: {%f, %f, %f, %f}\n", cr.x, cr.y, cr.width, cr.height);
+                            printf("plc: {%f, %f, %f, %f}\n", cp.x, cp.y, cp.width, cp.height);
+                            if (!CheckCollisionRecs(cr, cp))
+                            {
+                                PlaceObjectInWorld(levelObjs, curObj);
+                            }
+                        }
                         if (IsKeyPressed(KEY_F) && levelObjs->size > 0)
                         {
                             
@@ -512,12 +528,12 @@ int main(void)
         // Draw Crosshairs
         DrawLine(SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT, BLACK);
         DrawLine(0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2, BLACK);
+
+        DrawText(info, 4, 0, FONTLG, GOLD);
+
         if (saving)
         {
             DrawText("Saving...", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, FONTLG, BLUE);
-        }
-        if (mode == 1 && !autoBtn.disabled) {
-            DrawButton(autoBtn);
         }
         if (textInputMode)
         {
@@ -540,7 +556,6 @@ int main(void)
                 DrawRectangleLines(input2.x, input2.y, input2.width, input2.height, GREEN);
             }
         }
-        DrawText(info, 4, 0, FONTLG, GOLD);
         if (displayHelp)
         {
             float curse = 0;
@@ -556,8 +571,16 @@ int main(void)
                 DrawText(commonHelp[i], 4, curse + (i * (FONTLG + 10)), FONTLG, RAYWHITE);
             }
         }
-        if (mode == 0 || mode == 1 || mode == 2) {
-            DrawSavedSprites(curSheet);
+        // Draw all spritesheets
+        DrawLoadedTextures(sheetList, curSheetElmt);
+        if (mode == 1) {
+            if (!autoBtn.disabled)
+                DrawButton(autoBtn);
+            if (!rmvColliders.disabled)
+                DrawButton(rmvColliders);
+        }
+        if (mode < 3) {
+            DrawStoredSheetSpriteRects(curSheet);
         }
         if (mode == 2) {
             if (curObjElmt != NULL) {
@@ -566,7 +589,7 @@ int main(void)
             }
         }
         if (mode == 2 || mode == 3) {
-            DrawSavedObjects(objects, curObjElmt);
+            DrawStoredObjsList(objects, curObjElmt);
         }
         EndDrawing();
     }
@@ -601,17 +624,26 @@ void DestroyObject(Object *obj) {
     free(obj->name);
 }
 
-static void DrawSavedObjects(DList *objects, DListElmt *selected) {
+static void DrawStoredObjsList(DList *objects, DListElmt *selected) {
     float yidx = 0.0f;
     float objFontSz = 20.0f;
     float rmargin = 166.0f;
+    int curIdx = 0;
     Vector2 objFontPad = {.x = EL_PADDING, .y = EL_PADDING};
+    const char *nomsg = "No objects saved";
+    Vector2 fontvec = MeasureTextEx(GetFontDefault(), nomsg, 20.0f, 2.0f);
     if (objects->size == 0) {
-        const char *nomsg = "No objects saved";
-        Vector2 fontvec = MeasureTextEx(GetFontDefault(), nomsg, 20.0f, 2.0f);
         DrawText("No objects saved", GetScreenWidth() - rmargin - fontvec.x - objFontPad.x, yidx, 20, WHITE);
     }
     DListElmt *cursor = dlist_head(objects);
+    while (cursor != selected) {
+        curIdx++;
+        cursor = cursor->next;
+    }
+    if (curIdx * fontvec.y > SCREEN_HEIGHT) {
+        yidx = -(curIdx * fontvec.y - SCREEN_HEIGHT);
+    }
+    cursor = dlist_head(objects);
     while(cursor != NULL) {
         bool sel = selected ? true : false;
         Object *obj = (Object *)cursor->data;
@@ -651,40 +683,52 @@ static void DrawObjectSprites(Object *obj) {
     }
 }
 
-static void DrawSavedSprites(SpriteSheet *sheet)
+static void DrawStoredSheetSpriteRects(SpriteSheet *sheet)
 {
     Vector2 fontvec = MeasureTextEx(GetFontDefault(), "M", 20.0f, 1.0f);
-    float rmargin = 160.0f;
+    float outdim = CARD_DIM;
+    int curIdx = 1;
     float yidx = 0.0f;
+    float xrule = SCREEN_WIDTH - outdim;
     if (sheet->sheetRects->size == 0)
     {
-        DrawText("No rects saved", GetScreenWidth() - rmargin, yidx, 20, WHITE);
+        DrawText("No rects saved", xrule, yidx, 20, WHITE);
         return;
     }
     DListElmt *el = sheet->sheetRects->head;
-
+    while (el != sheet->selectedRect) {
+        curIdx++;
+        el = el->next;
+    }
+    if (curIdx * outdim > SCREEN_HEIGHT) {
+        yidx = -(curIdx * outdim - SCREEN_HEIGHT);
+    }
+    el = sheet->sheetRects->head;
     while (el != NULL)
     {
         bool sel = el == sheet->selectedRect ? true : false;
         SpriteRect *sr = (SpriteRect *)el->data;
-        float xscale = rmargin / sr->r.width;
+        
         Rectangle src = (Rectangle){
             .x = sr->r.x,
             .y = sr->r.y,
             .width = sr->r.width,
             .height = sr->r.height,
         };
+        float scaled = outdim / fmaxf(src.width, src.height);
         Rectangle dest = (Rectangle){
-            .x = SCREEN_WIDTH - rmargin,
-            .y = yidx,
-            .width = rmargin,
-            .height = sr->r.height * xscale < fontvec.y ? fontvec.y : sr->r.height * xscale,
+            .x = xrule + outdim / 2 - (src.width * scaled / 2),
+            .y = yidx + outdim / 2 - (src.height * scaled / 2),
+            .width = src.width * scaled,
+            .height = src.height * scaled,
         };
-        DrawTexturePro(sheet->t, src, dest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
-        DrawRectangleLinesEx(dest, 
+        DrawTexturePro(sheet->t, src, dest, (Vector2){0}, 0.0f, WHITE);
+        DrawRectangleLinesEx((Rectangle){
+            .x = SCREEN_WIDTH - outdim, 
+            .y = yidx, .width = outdim, .height = outdim}, 
             sel ? 2.0f : 1.0f, sel ? GREEN : BLACK);
-        DrawText(sr->name, dest.x + EL_PADDING, dest.y, 20, WHITE);
-        yidx += sr->r.height * xscale;
+        DrawText(sr->name, SCREEN_WIDTH - outdim + EL_PADDING, yidx + EL_PADDING, 20, WHITE);
+        yidx += outdim;
         el = el->next;
     }
 }
@@ -773,7 +817,7 @@ static void RectInput(Rectangle *r, Vector2 mouseWorldPos, SpriteSheet *curSheet
     }
 }
 
-static void UpdateMode(int *mode)
+static void UpdateMode(int *mode, Rectangle *r)
 {
     if (IsKeyPressed(KEY_ONE))
     {
@@ -781,6 +825,8 @@ static void UpdateMode(int *mode)
     }
     if (IsKeyPressed(KEY_TWO))
     {
+        r->width = 0;
+        r->height = 0;
         *mode = 1;
     }
     if (IsKeyPressed(KEY_THREE))
@@ -921,5 +967,30 @@ static void DrawButton(Button b) {
         DrawTextPro(GetFontDefault(), b.text, shift, (Vector2){0, 0}, 0.0f, b.fontSize, 1.0f, BLACK);
     } else {
         DrawTextPro(GetFontDefault(), b.text, shift, (Vector2){0, 0}, 0.0f, b.fontSize, 1.0f, WHITE);
+    }
+}
+
+static void DrawLoadedTextures(DList *textures, DListElmt *selected) {
+    DListElmt *idx = dlist_head(textures);
+    float width = SCREEN_WIDTH - CARD_DIM;
+
+    float widx = 0;
+    while (idx != selected) {
+        widx += CARD_DIM;
+        idx = idx->next;
+    }
+    if (widx > width) {
+        widx = -(widx - width); 
+    } else {
+        widx = 0;
+    }
+    idx = dlist_head(textures);
+    while(idx != NULL) {
+        DrawRectangleLinesEx((Rectangle) {
+            .x = widx, .y = SCREEN_HEIGHT - CARD_DIM, 
+            .width = CARD_DIM, .height = CARD_DIM
+        }, idx == selected ? 2.0f : 1.0f, idx == selected ? GREEN : BLACK);
+        idx = idx->next;
+        widx += CARD_DIM;
     }
 }

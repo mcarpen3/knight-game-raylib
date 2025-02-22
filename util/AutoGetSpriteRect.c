@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include "../datastructs/linkedlist.h"
 
-void GetSpriteBounds(Image img, List *rects) {
-    list_destroy(rects);
+void GetSpriteBounds(SpriteRect *sprite, List *rects) {
     int minx;
     int yAlphaSum = 0;
     bool minxFound = false;
-    for (int w = 0; w < img.width; ++w) {
+    Image img = LoadImageFromTexture(sprite->texture);
+    for (int w = sprite->r.x; w < sprite->r.width; ++w) {
         // iterate horizontally
-        for (int h = 0; h < img.height; ++h) {
+        for (int h = 0; h < sprite->r.height; ++h) {
             // iterate vertically
             Color c = GetImageColor(img, w, h);
             yAlphaSum += c.a;
@@ -36,7 +36,7 @@ void GetSpriteBounds(Image img, List *rects) {
         int xAlphaSum = 0;
         bool minyFound = false;
         Rectangle *tmp = (Rectangle *)idx->data;
-        for (int h = 0; h < img.height; ++h) {
+        for (int h = sprite->r.y; h < sprite->r.height; ++h) {
             for (int w = tmp->x; w < tmp->x + tmp->width; ++w) {
                 Color c = GetImageColor(img, w, h);
                 xAlphaSum += c.a;

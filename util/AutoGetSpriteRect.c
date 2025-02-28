@@ -1,5 +1,6 @@
 #include <raylib.h>
 #include <stdio.h>
+#include "../sprite/sprite.h"
 #include "../datastructs/linkedlist.h"
 
 void GetSpriteBounds(SpriteRect *sprite, List *rects) {

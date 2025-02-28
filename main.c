@@ -3,37 +3,44 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include "experiments/LoadWorld.c"
+#include "datastructs/linkedlist.h"
 
 #define MAX_FRAME_SPEED     15
 #define MIN_FRAME_SPEED      1
 #define ARRAY_LEN(x)(sizeof(x) / sizeof((x)[0]))
 #define CAM_SCALE_Y         1.4f
 #define BG_OFF_SCALAR       0.4f
-
+#define SCREEN_WIDTH        1280
+#define SCREEN_HEIGHT       720
+#define WORLD_WIDTH         SCREEN_WIDTH * 4
+static void DestroySpriteRects(SpriteRect *spriteRect) {
+    UnloadTexture(spriteRect->texture);
+    free(spriteRect->filename);
+    free(spriteRect);
+}
 int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
     srand(time(NULL));
-    const int screenWidth = 1920;
-    const int screenHeight = 1080;
     const float groundHeight = 128.0f;
-    const float end = screenWidth * 2;
     char *info = (char *)malloc(256);
 
-    InitWindow(screenWidth, screenHeight, "Knight HERO game!!!!");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Knight HERO game!!!!");
     // NOTE: Textures MUST be loaded after Window initialization (OpenGL context is required)
-    Object *o = ObjectFactory("knight", (Vector2){(float)screenWidth/2, (float)screenHeight}, (Vector2){120.0f, 80.0f});
-    Object *skeleton = ObjectFactory("skeleton", (Vector2){(float)screenWidth / 3, (float)screenHeight /2}, (Vector2){64.0f, 48.0f});
+    Object *o = ObjectFactory("knight", (Vector2){(float)SCREEN_WIDTH/2, (float)SCREEN_HEIGHT}, (Vector2){120.0f, 80.0f});
+    Object *skeleton = ObjectFactory("skeleton", (Vector2){(float)SCREEN_WIDTH / 3, (float)SCREEN_HEIGHT /2}, (Vector2){64.0f, 48.0f});
     Object *curObj = o;
-    Rectangle r0 = {.x = 0, .y = GetScreenHeight() - 140.0f, .width = 180.0f, .height = 140.0f};
-    Rectangle r1 = {.x = GetScreenWidth() - 110.0f, .y = GetScreenHeight() - 180.0f, .width = 110.0f, .height = 180.0f};
-    Rectangle r2 = {.x = GetScreenWidth() - 110.0f * 2, .y = GetScreenHeight() - 180.0f, .width = 110.0f, .height = 180.0f};
-    Rectangle rs[] = {r0, r1, r2};
+    List *envList = (List *)malloc(sizeof(List));
+    List *envColliderLines = (List *)malloc(sizeof(List));
+    List *envColliderRects = (List *)malloc(sizeof(List));
+    list_init(envList, (void *)DestroySpriteRects);
+    LoadWorld(envList, envColliderLines, envColliderRects);
     Texture2D bg = LoadTexture("./spritesheets/background/background.png");
     Camera2D camera = {0};
     camera.target = (Vector2){o->pos.x + o->c.width / 2, o->pos.y + o->c.height / 2};
-    camera.offset = (Vector2){screenWidth / 2, screenHeight - groundHeight};
+    camera.offset = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT - groundHeight};
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
     float bgOffset = 0.0f;
@@ -50,12 +57,6 @@ int main(void)
             } else {
                 curObj = o;
             }
-        }
-        if (IsKeyPressed(KEY_B)) {
-            curObj->setBounds = !curObj->setBounds;
-        }
-        if (IsKeyPressed(KEY_N) && curObj->setBounds) {
-            FrameAdvance(curObj->sprite);
         }
         if (IsKeyPressed(KEY_ENTER)) {
             SaveObjectParams(curObj);
@@ -80,26 +81,21 @@ int main(void)
                 Rest(curObj);
             }
         }
-        EnvCollision(o, rs, 3);
+        // EnvCollision(o, rs, 3);
         EnemyCollision(o, skeleton);
         Update(o);
         Update(skeleton);
 
-        if (o->pos.x <= screenWidth / 2) {
-            camera.target = (Vector2){screenWidth / 2, screenHeight - groundHeight};
+        if (o->pos.x <= SCREEN_WIDTH / 2) {
+            camera.target = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT - groundHeight};
         } else {
-            camera.target = (Vector2){o->pos.x, screenHeight - groundHeight};
+            camera.target = (Vector2){o->pos.x, SCREEN_HEIGHT - groundHeight};
             if (o->vel.x > 0) {
                 bgOffset -= BG_OFF_SCALAR;
             } else if (o->vel.x < 0) {
                 bgOffset += BG_OFF_SCALAR;
             }
         }
-        // sprintf(info, "posx: %.3f | posy: %.3f | recx: %.3f | recy: %.3f | recw: %.3f | recy: %.3f", 
-        //     o->pos.x, o->pos.y, o->c.x, o->c.y, o->c.width, o->c.height);
-        // sprintf(info, "%s: scale: %.3f, colx: %.3f, coly: %.3f, offsetx: %.3f", 
-        //     curObj->name, curObj->spriteScale, curObj->dscale.x, curObj->dscale.y, curObj->offsetX);
-        // sprintf(info, "posx: %.2f, posy: %.2f, velx: %.2f, vely: %.2f", o->pos.x, o->pos.y, o->vel.x, o->vel.y);
         sprintf(info, "vel: y: %f, jmp: %d", o->vel.y, o->jc);
         // Draw
         //----------------------------------------------------------------------------------
@@ -109,17 +105,23 @@ int main(void)
             // DrawText("HOLD L_ALT AND USE ARROWS TO SCALE COLLIDER", 2, 60 + 40 * 2 + 2, 40, WHITE);
             // DrawText("HOLD L_SHIFT AND USE ARROWS TO OFFSET COLLIDER", 2, 60 + 40 * 3 + 2, 40, WHITE);
             float bgXIdx = 0;
-            while(bgXIdx <= end) {
+            while(bgXIdx <= WORLD_WIDTH) {
                 Rectangle bgrec = (Rectangle){0, 0, bg.width, bg.height};
-                Rectangle bgrecDest = (Rectangle){bgXIdx + bgOffset, 0, screenWidth, screenHeight - groundHeight};
+                Rectangle bgrecDest = (Rectangle){bgXIdx + bgOffset, 0, SCREEN_WIDTH, SCREEN_HEIGHT - groundHeight};
                 DrawTexturePro(bg, bgrec, bgrecDest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
-                bgXIdx += screenWidth;
+                bgXIdx += SCREEN_WIDTH;
             }
             BeginMode2D(camera);
                 Draw(o);
                 Draw(skeleton);
-                for (int i = 0; i < 3; ++i) {
-                    DrawRectangleRec(rs[i], WHITE);
+                ListElmt *envItems = envList->head;
+                while(envItems != NULL) {
+                    SpriteRect *tmp = (SpriteRect *)envItems->data;
+                    DrawTexturePro(tmp->texture, tmp->src, tmp->dest, (Vector2){
+                        .x = tmp->dest.width / 2,
+                        .y = tmp->dest.height / 2
+                    }, tmp->rotation, WHITE);
+                    envItems = envItems->next;
                 }
             EndMode2D();
             DrawText(info, 2, 60, 40, WHITE);

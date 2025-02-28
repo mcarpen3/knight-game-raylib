@@ -7,6 +7,8 @@
 #include "../resources/getSpriteFiles.c"
 #include "../util/path.c"
 #include "actions.h"
+#include "../datastructs/doublelinkedlist.h"
+#include "../datastructs/linkedlist.h"
 
 #define MAX_VELOCITY 10.0f
 #define ACCEL 0.4f

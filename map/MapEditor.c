@@ -5,6 +5,7 @@
 #include <string.h>
 #include "../datastructs/linkedlist.h"
 #include "../datastructs/doublelinkedlist.h"
+#include "../datastructs/set.h"
 #include "../util/AutoGetSpriteRect.c"
 #include "../sprite/sprite.h"
 #include "../object/mapobject.h"
@@ -51,12 +52,15 @@ void DestroySpriteRect(SpriteRect *sr);
 void DestroySheet(SpriteSheet *ss);
 void DestroyCollider(Collider *collider);
 void DestroyObject(Object *obj);
+int SheetMatch(const void *key1, const void *key2) {
+    return ((SpriteSheet *)key1)->filename == ((SpriteSheet *)key2)->filename ? 1 : 0;
+}
 static void DrawLoadedTextures(DList *textures, DListElmt *selected);
 static void DrawStoredSheetSpriteRects(SpriteSheet *sheet);
-static void DrawStoredObjsList(DList *objects, DListElmt *selected, char **objtypes);
+static void DrawStoredObjsList(DList *objectList, DListElmt *selected, char **objtypes);
 static void DrawObjectSprites(Object *obj);
 static void DrawObjectSpritesMenu(DListElmt *curObjElmt);
-static void SelfDestruct(DList *sheetList, List *level, DList *objects);
+static void SelfDestruct(DList *sheetList, List *level, DList *objectList);
 static void PlaceObjectInWorld(List *placedObjects, Object *obj);
 
 static void DrawObject(Object *obj);
@@ -70,16 +74,17 @@ static void InitSpriteSheets(const char *folder, DList *sheetList);
 static Button InitButton(const char *text, Vector2 position, float fontSize);
 static void DrawButton(Button b);
 static void UpdateSpriteFrame(SpriteRect *sprite);
-static void SaveMap(Rectangle world, List *levelObjs);
+static void SaveMap(Rectangle world, List *levelObjList);
 static void SelectionCycle(DList *list, DListElmt **current, int direction);
+
 
 int main(void)
 {
     const char *spritesFolder = "/home/matt/Documents/c/raylib/spritesheets";
     DList *sheetList = (DList *)malloc(sizeof(DList));
-    DList *activeSheets = (DList *)malloc(sizeof(DList));
-    List *levelObjs = (List *)malloc(sizeof(List));
-    DList *objects = (DList *)malloc(sizeof(DList));
+    Set *activeSheetList = (Set *)malloc(sizeof(Set));
+    List *levelObjList = (List *)malloc(sizeof(List));
+    DList *objectList = (DList *)malloc(sizeof(DList));
     char *input = (char *)malloc(128);
     char *text = (char *)malloc(MAX_INPUT_CHARS);
     char *info = (char *)malloc(256);
@@ -107,15 +112,16 @@ int main(void)
             "'HOME/END'=Change Sprite",
         },
         {
-            // mode2 - create objects from 1 or more spriteRects
+            // mode2 - create objectList from 1 or more spriteRects
             "'N'=Create New Object",
             "'R'=Add current sprite rect to the current object",
             "'PGUP/PGDN'=Change Sheet",
             "'HOME/END'=Change Sprite",
-            "'UP/DOWN'=Change Object",
+            "'LSHIFT+PGUP/PGDN'=Change Object",
+            "'UP/DOWN'=Change Object Type",
         },
         {
-            // mode3 - place objects in the map
+            // mode3 - place objectList in the map
             "'UP/DOWN'=Scale",
             "'RIGHT/LEFT'=Rotate",
             "'LEFTCLICK'=Place Object",
@@ -150,9 +156,9 @@ int main(void)
     bool saving = false;
 
     dlist_init(sheetList, (void *)DestroySheet);
-    dlist_init(activeSheets, NULL);
-    dlist_init(objects, (void *)DestroyObject);
-    list_init(levelObjs, (void *)DestroyObject);
+    set_init(activeSheetList, &SheetMatch, NULL);
+    dlist_init(objectList, (void *)DestroyObject);
+    list_init(levelObjList, (void *)DestroyObject);
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "MAP SPRITE EDITOR!");
     SetTargetFPS(60);
@@ -161,9 +167,9 @@ int main(void)
     Vector2 fontvec = MeasureTextEx(GetFontDefault(), "M", FONTLG, 1);
     DListElmt *curSheetElmt = sheetList->head;
     SpriteSheet *curSheet = (SpriteSheet *)curSheetElmt->data;
-    DListElmt *curActiveElmt = activeSheets->head;
-    SpriteSheet *activeSheet = NULL;
-    DListElmt *curObjElmt = objects->head;
+    DListElmt *curActiveSheetElmt = activeSheetList->head;
+    SpriteSheet *curActiveSheet = NULL;
+    DListElmt *curObjElmt = objectList->head;
     Camera2D camera = {0};
     Vector2 center = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
     Rectangle r = (Rectangle){0};
@@ -213,8 +219,8 @@ int main(void)
                 if (mode == 0)
                 {
                     StoreSpriteRect(curSheet, r, text, number);
-                    dlist_ins_next(activeSheets, list_tail(activeSheets), curSheet);
-                    curActiveElmt = list_tail(activeSheets);
+                    set_insert(activeSheetList, curSheet);
+                    curActiveSheetElmt = dlist_tail(activeSheetList);
                 }
                 if (mode == 2)
                 {
@@ -227,8 +233,8 @@ int main(void)
                     newObj->name = strdup(text);
                     newObj->curSpriteEl = NULL;
                     newObj->type = number;
-                    dlist_ins_next(objects, dlist_tail(objects), (void *)newObj);
-                    curObjElmt = dlist_tail(objects);
+                    dlist_ins_next(objectList, dlist_tail(objectList), (void *)newObj);
+                    curObjElmt = dlist_tail(objectList);
                 }
                 memset(text, 0, MAX_INPUT_CHARS);
                 letterCount = 0;
@@ -271,11 +277,12 @@ int main(void)
                 int key = GetKeyPressed();
                 if (mode == 0) {
                     SelectionCycle(sheetList, &curSheetElmt, key);
-                } else if (mode != 3 && curActiveElmt) {
-                    SelectionCycle(activeSheets, &curActiveElmt, key);
+                } else if (mode == 2 && IsKeyDown(KEY_LEFT_SHIFT)) {
+                    SelectionCycle(objectList, &curObjElmt, key);
+                } else if (mode != 3) {
+                    SelectionCycle(activeSheetList, &curActiveSheetElmt, key);
                 } else if (curObjElmt) {
-                    Object *tmpobj = curObjElmt->data;
-                    SelectionCycle(tmpobj->sprites, &tmpobj->curSpriteEl, key);
+                    SelectionCycle(objectList, &curObjElmt, key);
                 }
                 r.width = 0.0f;
                 r.height = 0.0f;
@@ -288,8 +295,8 @@ int main(void)
                 int key = GetKeyPressed();
                 if (mode == 0) {
                     SelectionCycle(curSheet->sheetRects, &curSheet->selectedRect, key);
-                } else if (mode != 3 && activeSheet) {
-                    SelectionCycle(activeSheet ? activeSheet->sheetRects : NULL, &activeSheet->selectedRect, key);
+                } else if (mode != 3) {
+                    SelectionCycle(curActiveSheet->sheetRects, &curActiveSheet->selectedRect, key);
                 } else if (curObjElmt) {
                     Object *tmpobj = curObjElmt->data;
                     SelectionCycle(tmpobj->sprites, &tmpobj->curSpriteEl, key);
@@ -329,100 +336,92 @@ int main(void)
             }
             if (mode == 1)
             {
-                if (activeSheets->size != 0)
+                if (activeSheetList->size > 0)
                 {
                     // sprite colliders mode
-                    activeSheet = curSheet->sheetRects->size == 0 ? (SpriteSheet *)activeSheets->head : curSheet;
+                    curActiveSheet = (SpriteSheet *)curActiveSheetElmt->data;
                     sprintf(info, "MODE: %s, File: \"%s\", Zoom: [%.2f], CldrMode: %s",
                             modeStrs[mode],
-                            activeSheet->basename,
+                            curActiveSheet->basename,
                             camera.zoom,
                             lineCollider ? "LINE" : "RECT");
-                    if (activeSheet->selectedRect == NULL)
+                    autoBtn.disabled = false;
+                    SpriteRect *curRect = (SpriteRect *)curActiveSheet->selectedRect->data;
+                    Rectangle curRectBounds = (Rectangle){
+                        .x = SCREEN_WIDTH / 2 - curRect->r.width / 2,
+                        .y = SCREEN_HEIGHT / 2 - curRect->r.height / 2,
+                        .width = curRect->r.width,
+                        .height = curRect->r.height,
+                    };
+                    if (lineCollider == false)
                     {
-                        autoBtn.disabled = true;
-                        rmvColliders.disabled = true;
+                        RectInput(&r, mouseWorldPos, curRectBounds);
                     }
                     else
                     {
-                        autoBtn.disabled = false;
-                        SpriteRect *curRect = (SpriteRect *)activeSheet->selectedRect->data;
-                        Rectangle curRectBounds = (Rectangle){
-                            .x = SCREEN_WIDTH / 2 - curRect->r.width / 2,
-                            .y = SCREEN_HEIGHT / 2 - curRect->r.height / 2,
-                            .width = curRect->r.width,
-                            .height = curRect->r.height,
+                        LineInput(&l, mouseWorldPos, curRectBounds);
+                    }
+                    if (curRect->colliders->size > 0)
+                    {
+                        rmvColliders.disabled = false;
+                    }
+                    if (IsKeyPressed(KEY_R))
+                    {
+                        printf("INFO: Saving collider..\n");
+                        SpriteRect *sptr = (SpriteRect *)curActiveSheet->selectedRect->data;
+                        Collider *tmpCldr = (Collider *)malloc(sizeof(Collider));
+                        Vector2 spriteOffset = (Vector2){
+                            .x = SCREEN_WIDTH / 2 - sptr->r.width / 2,
+                            .y = SCREEN_HEIGHT / 2 - sptr->r.height / 2,
                         };
                         if (lineCollider == false)
                         {
-                            RectInput(&r, mouseWorldPos, curRectBounds);
-                        }
-                        else
-                        {
-                            LineInput(&l, mouseWorldPos, curRectBounds);
-                        }
-                        if (curRect->colliders->size > 0)
-                        {
-                            rmvColliders.disabled = false;
-                        }
-                        if (IsKeyPressed(KEY_R))
-                        {
-                            printf("INFO: Saving collider..\n");
-                            SpriteRect *sptr = (SpriteRect *)activeSheet->selectedRect->data;
-                            Collider *tmpCldr = (Collider *)malloc(sizeof(Collider));
-                            Vector2 spriteOffset = (Vector2){
-                                .x = SCREEN_WIDTH / 2 - sptr->r.width / 2,
-                                .y = SCREEN_HEIGHT / 2 - sptr->r.height / 2,
+                            tmpCldr->type = RectType;
+                            tmpCldr->data.rect = (Rectangle){
+                                .x = r.x - spriteOffset.x,
+                                .y = r.y - spriteOffset.y,
+                                .width = r.width,
+                                .height = r.height,
                             };
-                            if (lineCollider == false)
-                            {
-                                tmpCldr->type = RectType;
-                                tmpCldr->data.rect = (Rectangle){
-                                    .x = r.x - spriteOffset.x,
-                                    .y = r.y - spriteOffset.y,
-                                    .width = r.width,
-                                    .height = r.height,
-                                };
-                                list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpCldr);
-                            }
-                            else
-                            {
-                                tmpCldr->type = LineType;
-                                tmpCldr->data.line.p1 = (Vector2){.x = l.p1.x, .y = l.p1.y};
-                                tmpCldr->data.line.p2 = (Vector2){.x = l.p2.x, .y = l.p2.y};
-                                list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpCldr);
-                            }
-                        }
-                        if (CheckCollisionPointRec(GetMousePosition(), autoBtn.destination))
-                        {
-                            autoBtn.hover = true;
-                            if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && autoBtn.disabled == false)
-                            {
-                                SpriteRect *sptr = (SpriteRect *)activeSheet->selectedRect->data;
-                                list_init(sptr->colliders, (void *)DestroyCollider);
-                                GetSpriteBounds(LoadImageFromTexture(sptr->texture), sptr->colliders);
-                                printf("INFO: auto bounds found %d rects\n", sptr->colliders->size);
-                            }
+                            list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpCldr);
                         }
                         else
                         {
-                            autoBtn.hover = false;
+                            tmpCldr->type = LineType;
+                            tmpCldr->data.line.p1 = (Vector2){.x = l.p1.x, .y = l.p1.y};
+                            tmpCldr->data.line.p2 = (Vector2){.x = l.p2.x, .y = l.p2.y};
+                            list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpCldr);
                         }
-                        if (CheckCollisionPointRec(GetMousePosition(), rmvColliders.destination))
+                    }
+                    if (CheckCollisionPointRec(GetMousePosition(), autoBtn.destination))
+                    {
+                        autoBtn.hover = true;
+                        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && autoBtn.disabled == false)
                         {
-                            rmvColliders.hover = true;
-                            if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && rmvColliders.disabled == false)
-                            {
-                                SpriteRect *sptr = (SpriteRect *)activeSheet->selectedRect->data;
-                                printf("INFO: Removing %d\n", sptr->colliders->size);
-                                list_destroy(sptr->colliders);
-                                list_init(sptr->colliders, (void *)DestroyCollider);
-                            }
+                            SpriteRect *sptr = (SpriteRect *)curActiveSheet->selectedRect->data;
+                            list_init(sptr->colliders, (void *)DestroyCollider);
+                            GetSpriteBounds(LoadImageFromTexture(sptr->texture), sptr->colliders);
+                            printf("INFO: auto bounds found %d rects\n", sptr->colliders->size);
                         }
-                        else
+                    }
+                    else
+                    {
+                        autoBtn.hover = false;
+                    }
+                    if (CheckCollisionPointRec(GetMousePosition(), rmvColliders.destination))
+                    {
+                        rmvColliders.hover = true;
+                        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && rmvColliders.disabled == false)
                         {
-                            rmvColliders.hover = false;
+                            SpriteRect *sptr = (SpriteRect *)curActiveSheet->selectedRect->data;
+                            printf("INFO: Removing %d\n", sptr->colliders->size);
+                            list_destroy(sptr->colliders);
+                            list_init(sptr->colliders, (void *)DestroyCollider);
                         }
+                    }
+                    else
+                    {
+                        rmvColliders.hover = false;
                     }
                 }
                 if (IsKeyPressed(KEY_L))
@@ -432,11 +431,10 @@ int main(void)
             }
             if (mode == 2)
             {
-                if (activeSheets->size != 0) {
-
+                if (activeSheetList->size > 0) {
                     // Object making mode
-                    activeSheet = curSheet->sheetRects->size == 0 ? (SpriteSheet *)curActiveElmt->data : (SpriteSheet *)curSheet->selectedRect;
-                    sprintf(info, "MODE: %s, File: \"%s\", Zoom: [%.2f]", modeStrs[mode], activeSheet->basename, camera.zoom);
+                    curActiveSheet = (SpriteSheet *)curActiveSheetElmt->data;
+                    sprintf(info, "MODE: %s, File: \"%s\", Zoom: [%.2f]", modeStrs[mode], curActiveSheet->basename, camera.zoom);
                     if (IsKeyPressed(KEY_N))
                     {
                         inputMode = true;
@@ -446,13 +444,10 @@ int main(void)
                     if (IsKeyPressed(KEY_R))
                     {
                         // add the current spriteRect to the object
-                        if (activeSheet->selectedRect != NULL && curObjElmt != NULL)
-                        {
-                            Object *curObj = (Object *)curObjElmt->data;
-                            SpriteRect *curRect = (SpriteRect *)activeSheet->selectedRect->data;
-                            dlist_ins_next(curObj->sprites, dlist_tail(curObj->sprites), curRect);
-                            curObj->curSpriteEl = dlist_tail(curObj->sprites);
-                        }
+                        Object *curObj = (Object *)curObjElmt->data;
+                        SpriteRect *curRect = (SpriteRect *)curActiveSheet->selectedRect->data;
+                        dlist_ins_next(curObj->sprites, dlist_tail(curObj->sprites), curRect);
+                        curObj->curSpriteEl = dlist_tail(curObj->sprites);
                     }
                 }
             }
@@ -465,7 +460,7 @@ int main(void)
                 if (curObjElmt != NULL)
                 {
                     Object *curObj = (Object *)curObjElmt->data;
-                    DListElmt *placedObject = dlist_head(objects);
+                    DListElmt *placedObject = dlist_head(objectList);
                     while (placedObject != NULL)
                     {
                         Object *tmpobj = (Object *)placedObject->data;
@@ -495,12 +490,12 @@ int main(void)
                         }
                         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
                         {
-                            PlaceObjectInWorld(levelObjs, curObj);
+                            PlaceObjectInWorld(levelObjList, curObj);
                         }
                         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
                         {
                             // drag the mouse to place more sprites adjacent to the currently placed one
-                            ListElmt *last = list_tail(levelObjs);
+                            ListElmt *last = list_tail(levelObjList);
                             Object *placedObj = (Object *)last->data;
                             SpriteRect *placed = (SpriteRect *)placedObj->curSpriteEl->data;
                             SpriteRect *rect = (SpriteRect *)((Object *)curObjElmt->data)->curSpriteEl->data;
@@ -517,13 +512,13 @@ int main(void)
                                 .y = placedObj->position.y - (placed->r.height * placedObj->scale / 2)};
                             if (!CheckCollisionRecs(cr, cp))
                             {
-                                PlaceObjectInWorld(levelObjs, curObj);
+                                PlaceObjectInWorld(levelObjList, curObj);
                             }
                             if (IsKeyPressed(KEY_HOME))
                             {
                                 if (dlist_is_head(curObjElmt))
                                 {
-                                    curObjElmt = dlist_tail(objects);
+                                    curObjElmt = dlist_tail(objectList);
                                 }
                                 else
                                 {
@@ -534,7 +529,7 @@ int main(void)
                             {
                                 if (dlist_is_tail(curObjElmt))
                                 {
-                                    curObjElmt = dlist_tail(objects);
+                                    curObjElmt = dlist_tail(objectList);
                                 }
                                 else
                                 {
@@ -542,10 +537,10 @@ int main(void)
                                 }
                             }
                         }
-                        if (IsKeyPressed(KEY_F) && levelObjs->size > 0)
+                        if (IsKeyPressed(KEY_F) && levelObjList->size > 0)
                         {
-                            // TODO: save the map objects
-                            SaveMap(world, levelObjs);
+                            // TODO: save the map objectList
+                            SaveMap(world, levelObjList);
                         }
                         if (IsKeyPressed(KEY_H))
                         {
@@ -585,10 +580,9 @@ int main(void)
         if (mode == 1)
         {
             // Collider mode
-            if (curSheet->selectedRect != NULL)
-            {
-                // Draw the currently selected sprite in the middle of the screen
-                SpriteRect *tmprect = (SpriteRect *)curSheet->selectedRect->data;
+            // Draw the currently selected sprite in the middle of the screen
+            if (activeSheetList->size > 0) {
+                SpriteRect *tmprect = (SpriteRect *)curActiveSheet->selectedRect->data;
                 Rectangle destination = (Rectangle){
                     .x = (SCREEN_WIDTH / 2) - (tmprect->r.width / 2),
                     .y = (SCREEN_HEIGHT / 2) - (tmprect->r.height / 2),
@@ -616,6 +610,10 @@ int main(void)
                     }
                     i = i->next;
                 }
+            }
+            if (lineCollider) {
+                DrawLineBezier(l.p1, l.p2, 1.0, GREEN);
+            } else {
                 DrawRectangleLinesEx(r, 1.0f, GREEN);
             }
         }
@@ -627,8 +625,8 @@ int main(void)
         {
             // draw the world rectangle
             DrawRectangleRec(world, BROWN);
-            // draw the saved objects
-            ListElmt *levelEl = levelObjs->head;
+            // draw the saved objectList
+            ListElmt *levelEl = levelObjList->head;
             while (levelEl != NULL)
             {
                 Object *curObj = (Object *)levelEl->data;
@@ -652,6 +650,55 @@ int main(void)
         {
             DrawText("Saving...", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, FONTLG, BLUE);
         }
+
+        if (displayHelp)
+        {
+            float curse = 0;
+            for (int i = 0; i < ARRAY_LEN(help[mode]); ++i)
+            {
+                curse = 40 + (i * (FONTLG + 10));
+                if (help[mode][i] != NULL)
+                    DrawText(help[mode][i], 4, curse, FONTLG, RAYWHITE);
+            }
+            curse += FONTLG + 10;
+            for (int i = 0; i < ARRAY_LEN(commonHelp); ++i)
+            {
+                DrawText(commonHelp[i], 4, curse + (i * (FONTLG + 10)), FONTLG, RAYWHITE);
+            }
+        }
+        if (mode == 0)
+        {
+            DrawLoadedTextures(sheetList, curSheetElmt);
+            DrawStoredSheetSpriteRects(curSheet);
+        }
+        else if (mode != 3)
+        {
+            DrawLoadedTextures(activeSheetList, curActiveSheetElmt);
+            DrawStoredSheetSpriteRects(curActiveSheet);
+        }
+        if (mode == 1)
+        {
+            if (!autoBtn.disabled)
+                DrawButton(autoBtn);
+            if (!rmvColliders.disabled)
+                DrawButton(rmvColliders);
+        }
+        if (mode == 2)
+        {
+            if (curObjElmt != NULL)
+            {
+                Object *curObj = (Object *)curObjElmt->data;
+                DrawObjectSprites(curObj);
+            }
+        }
+        if (mode == 2 || mode == 3)
+        {
+            DrawStoredObjsList(objectList, curObjElmt, objTypes);
+        }
+        if (mode == 3)
+        {
+            DrawObjectSpritesMenu(curObjElmt);
+        }
         if (inputMode)
         {
             Rectangle input1 = (Rectangle){
@@ -671,60 +718,9 @@ int main(void)
             DrawText(numinput, input2.x + 2, input2.y, FONTLG, WHITE);
             DrawRectangleLines(input2.x, input2.y, input2.width, input2.height, GREEN);
         }
-        if (displayHelp)
-        {
-            float curse = 0;
-            for (int i = 0; i < ARRAY_LEN(help[mode]); ++i)
-            {
-                curse = 40 + (i * (FONTLG + 10));
-                if (help[mode][i] != NULL)
-                    DrawText(help[mode][i], 4, curse, FONTLG, RAYWHITE);
-            }
-            curse += FONTLG + 10;
-            for (int i = 0; i < ARRAY_LEN(commonHelp); ++i)
-            {
-                DrawText(commonHelp[i], 4, curse + (i * (FONTLG + 10)), FONTLG, RAYWHITE);
-            }
-        }
-        if (mode == 0)
-        {
-            DrawLoadedTextures(sheetList, curSheetElmt);
-        }
-        else if (mode != 3)
-        {
-            DrawLoadedTextures(activeSheets, curActiveElmt);
-        }
-        if (mode == 1)
-        {
-            if (!autoBtn.disabled)
-                DrawButton(autoBtn);
-            if (!rmvColliders.disabled)
-                DrawButton(rmvColliders);
-        }
-        if (mode < 3)
-        {
-            curSheet = (SpriteSheet *)curSheetElmt->data;
-            DrawStoredSheetSpriteRects(curSheet);
-        }
-        if (mode == 2)
-        {
-            if (curObjElmt != NULL)
-            {
-                Object *curObj = (Object *)curObjElmt->data;
-                DrawObjectSprites(curObj);
-            }
-        }
-        if (mode == 2 || mode == 3)
-        {
-            DrawStoredObjsList(objects, curObjElmt, objTypes);
-        }
-        if (mode == 3)
-        {
-            DrawObjectSpritesMenu(curObjElmt);
-        }
         EndDrawing();
     }
-    SelfDestruct(sheetList, levelObjs, objects);
+    SelfDestruct(sheetList, levelObjList, objectList);
     free(info);
     free(input);
     free(numinput);
@@ -757,20 +753,20 @@ void DestroyObject(Object *obj)
     free(obj->name);
 }
 
-static void DrawStoredObjsList(DList *objects, DListElmt *selected, char **objtypes)
+static void DrawStoredObjsList(DList *objectList, DListElmt *selected, char **objtypes)
 {
     float yidx = 0.0f;
     float objFontSz = 20.0f;
     float rmargin = CARD_DIM + EL_PADDING;
     int curIdx = 0;
     Vector2 objFontPad = {.x = EL_PADDING, .y = EL_PADDING};
-    const char *nomsg = "No objects!";
+    const char *nomsg = "No objectList!";
     Vector2 fontvec = MeasureTextEx(GetFontDefault(), nomsg, 20.0f, 2.0f);
-    if (objects->size == 0)
+    if (objectList->size == 0)
     {
         DrawText(nomsg, GetScreenWidth() - rmargin - fontvec.x - objFontPad.x, yidx, 20, WHITE);
     }
-    DListElmt *cursor = dlist_head(objects);
+    DListElmt *cursor = dlist_head(objectList);
     while (cursor != selected)
     {
         curIdx++;
@@ -780,7 +776,7 @@ static void DrawStoredObjsList(DList *objects, DListElmt *selected, char **objty
     {
         yidx = -(curIdx * fontvec.y - SCREEN_HEIGHT);
     }
-    cursor = dlist_head(objects);
+    cursor = dlist_head(objectList);
     while (cursor != NULL)
     {
         bool sel = selected == cursor ? true : false;
@@ -1022,8 +1018,8 @@ static void LineInput(Line *line, Vector2 mouseWorldPos, Rectangle bounds)
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
     {
-        line->p2.x = Clamp(mouseWorldPos.x - line->p2.x, 0.0f, bounds.x + bounds.width - line->p1.x);
-        line->p2.y = Clamp(mouseWorldPos.y - line->p2.y, 0.0f, bounds.y + bounds.height - line->p1.y);
+        line->p2.x = Clamp(mouseWorldPos.x, bounds.x, bounds.x + bounds.width);
+        line->p2.y = Clamp(mouseWorldPos.y, bounds.y, bounds.y + bounds.height);
     }
 }
 
@@ -1231,7 +1227,7 @@ static void DrawLoadedTextures(DList *textures, DListElmt *selected)
     }
 }
 
-static void SaveMap(Rectangle world, List *levelObjs)
+static void SaveMap(Rectangle world, List *levelObjList)
 {
     const char *filename = "Map.bin";
     FILE *out = fopen(filename, "w");
@@ -1241,7 +1237,7 @@ static void SaveMap(Rectangle world, List *levelObjs)
         return;
     }
     fwrite(&world, sizeof(Rectangle), 1, out);
-    ListElmt *objEl = list_head(levelObjs);
+    ListElmt *objEl = list_head(levelObjList);
     while (objEl != NULL)
     {
         Object *obj = (Object *)objEl->data;
@@ -1279,9 +1275,11 @@ static void SaveMap(Rectangle world, List *levelObjs)
                 {
                     fwrite(&collider->data.line, sizeof(Line), 1, out);
                 }
+                colliderEl = colliderEl->next;
             }
             spriteEl = spriteEl->next;
         }
+        objEl = objEl->next;
     }
     fclose(out);
 }

@@ -1,13 +1,14 @@
 #ifndef SET_H
 #define SET_H
-#include "./linkedlist.h"
+#include "./doublelinkedlist.h"
+#include <stdlib.h>
 
-typedef List Set;
+typedef DList Set;
 
 // public
 void set_init(Set *set, int (*match)(const void *key1, const void *key2), void (*destroy)(void *data));
 
-#define set_destroy list_destroy
+#define set_destroy dlist_destroy
 
 int set_insert(Set *set, const void *data);
 int set_remove(Set *set, void **data);

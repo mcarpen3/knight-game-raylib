@@ -3,5 +3,5 @@ test
 .vscode
 main-game
 build
-experiments
 map/*.bin
+experiments

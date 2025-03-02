@@ -17,8 +17,8 @@ typedef struct DList_ {
 
 void dlist_init(DList *dlist, void (*destroy)(void *data));
 void dlist_destroy(DList *dlist);
-int dlist_ins_next(DList *dlist, DListElmt *element, void *data);
-int dlist_ins_prev(DList *dlist, DListElmt *element, void *data);
+int dlist_ins_next(DList *dlist, DListElmt *element, const void *data);
+int dlist_ins_prev(DList *dlist, DListElmt *element, const void *data);
 int dlist_remove(DList *dlist, DListElmt *element, void **data);
 
 #define dlist_size(dlist) ((dlist)->size)

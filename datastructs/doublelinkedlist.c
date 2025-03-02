@@ -18,7 +18,7 @@ void dlist_destroy(DList *dlist) {
     memset(dlist, 0, sizeof(DList));
     return;
 }
-int dlist_ins_next(DList *dlist, DListElmt *element, void *data) {
+int dlist_ins_next(DList *dlist, DListElmt *element, const void *data) {
     DListElmt *new_el; 
     if (element == NULL && dlist_size(dlist) != 0) return -1;
     if ((new_el = (DListElmt *)malloc(sizeof(DListElmt))) == NULL) {
@@ -44,7 +44,7 @@ int dlist_ins_next(DList *dlist, DListElmt *element, void *data) {
     return 0;
 }
 
-int dlist_ins_prev(DList *dlist, DListElmt *element, void *data) {
+int dlist_ins_prev(DList *dlist, DListElmt *element, const void *data) {
     DListElmt *new_el;
     if (element == NULL && dlist_size(dlist) != 0) return -1;
     if ((new_el = (DListElmt *)malloc(sizeof(DListElmt))) == NULL) return -1;

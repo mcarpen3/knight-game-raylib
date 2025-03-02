@@ -4,3 +4,4 @@ test
 main-game
 build
 experiments
+map/*.bin

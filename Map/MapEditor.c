@@ -1,14 +1,14 @@
-#include <raylib.h>
+ #include <raylib.h>
 #include <raymath.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "../datastructs/linkedlist.h"
-#include "../datastructs/doublelinkedlist.h"
-#include "../datastructs/set.h"
+#include "../Datastructs/linkedlist.h"
+#include "../Datastructs/doublelinkedlist.h"
+#include "../Datastructs/set.h"
 #include "../util/AutoGetSpriteRect.c"
-#include "../sprite/sprite.h"
-#include "../object/mapobject.h"
+#include "../Sprite/sprite.h"
+#include "../Object/mapobject.h"
 
 #define MAX_INPUT_CHARS 16
 #define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
@@ -48,10 +48,7 @@ typedef struct Button_
     float fontSize;
 } Button;
 
-void DestroySpriteRect(SpriteRect *sr);
 void DestroySheet(SpriteSheet *ss);
-void DestroyCollider(Collider *collider);
-void DestroyObject(Object *obj);
 int SheetMatch(const void *key1, const void *key2) {
     return ((SpriteSheet *)key1)->filename == ((SpriteSheet *)key2)->filename ? 1 : 0;
 }
@@ -68,8 +65,8 @@ static void RectInput(Rectangle *rect, Vector2 mouseWorldPos, Rectangle bounds);
 static void LineInput(Line *line, Vector2 mouseWorldPos, Rectangle bounds);
 static void UpdateMode(int *mode, Rectangle *r);
 static bool GetTextInput(char *input, bool *clearBuffer, int *charCount);
-static void GetNumInput(int *input, int min, int max);
-static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int frameCount);
+static bool GetNumInput(int *input, int min, int max, bool shift);
+static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int frameCount, int action);
 static void InitSpriteSheets(const char *folder, DList *sheetList);
 static Button InitButton(const char *text, Vector2 position, float fontSize);
 static void DrawButton(Button b);
@@ -80,7 +77,7 @@ static void SelectionCycle(DList *list, DListElmt **current, int direction);
 
 int main(void)
 {
-    const char *spritesFolder = "/home/matt/Documents/c/raylib/spritesheets";
+    const char *spritesFolder = "/home/matt/Documents/c/raylib/resources";
     DList *sheetList = (DList *)malloc(sizeof(DList));
     Set *activeSheetList = (Set *)malloc(sizeof(Set));
     List *levelObjList = (List *)malloc(sizeof(List));
@@ -88,16 +85,20 @@ int main(void)
     char *input = (char *)malloc(128);
     char *text = (char *)malloc(MAX_INPUT_CHARS);
     char *info = (char *)malloc(256);
-    char *numinput = (char *)malloc(2 * sizeof(char));
+    char *numinput = (char *)malloc(128);
+    char *actinput = (char *)malloc(128);
     char *spritePrompt = "SPRITE NAME: ";
     char *framesPrompt = "FRAME COUNT: ";
+    char *spriteActPrompt = "SPRITE ACT.: ";
     char *objectPrompt = "OBJ. NAME: ";
     char *typePrompt = "OBJ. TYPE: ";
-    char *help[][6] = {
+    char *help[][8] = {
         {
             // mode0 - cut out sprite rects
             "'LEFTCLICK/DRAG'=Cut Out Rect",
-            "'R'=Name Rect",
+            "'R'=Define Sprite Rect",
+            "'UP/DOWN'=Cycle Frame Count",
+            "'SHIFT+UP/DOWN'=Cycle Actions",
             "'ENTER'=Store Rect.",
             "'PGUP/PGDN'=Change Sheet",
             "'HOME/END'=Select Stored Rect.",
@@ -145,9 +146,20 @@ int main(void)
         "Projectile",
         "Environment",
     };
+    char *actTypes[] = {
+        "NoAction","Attack","Attack2","AttackNoMovement","AttackCombo",
+        "AttackComboNoMovement","AttackNoMovement",
+        "Crouch","CrouchAttack","CrouchFull","CrouchTransition",
+        "CrouchWalk","Dash","Death","DeathNoMovement",
+        "Fall","Hit","Idle","Jump","JumpFallInBetween","Roll",
+        "Run","Slide","SlideFull","SlideTransitionEnd",
+        "SlideTransitionStart","TurnAround","WallClimb",
+        "WallClimbNoMovement","WallHang","WallSlide"
+    };
     float panSpeed = 10.0f;
     int letterCount = 0;
     int number = 1;
+    int actNum = 0;
     int mode = 0;
     bool displayHelp = true;
     bool inputMode = false;
@@ -218,7 +230,7 @@ int main(void)
                 inputMode = false;
                 if (mode == 0)
                 {
-                    StoreSpriteRect(curSheet, r, text, number);
+                    StoreSpriteRect(curSheet, r, text, number, actNum);
                     set_insert(activeSheetList, curSheet);
                     curActiveSheetElmt = dlist_tail(activeSheetList);
                 }
@@ -239,11 +251,13 @@ int main(void)
                 memset(text, 0, MAX_INPUT_CHARS);
                 letterCount = 0;
             }
-            GetNumInput(&number, mode == 0 ? 1 : 0, mode == 0 ? 60 : ARRAY_LEN(objTypes) - 1);
+            GetNumInput(&number, mode == 0 ? 1 : 0, mode == 0 ? 60 : ARRAY_LEN(objTypes) - 1, false);
             sprintf(input, "%s%s", mode == 0 ? spritePrompt : objectPrompt, text);
             if (mode == 0)
             {
+                GetNumInput(&actNum, 0, ARRAY_LEN(actTypes) - 1, true);
                 sprintf(numinput, "%s%d", framesPrompt, number);
+                sprintf(actinput, "%s%s", spriteActPrompt, actTypes[actNum]);
             }
             if (mode == 2)
             {
@@ -318,6 +332,7 @@ int main(void)
                 if (IsKeyPressed(KEY_R))
                 {
                     number = 1;
+                    actNum = 0;
                     inputMode = true;
                     clearInput = true;
                 }
@@ -454,9 +469,9 @@ int main(void)
             if (mode == 3)
             {
                 // object place mode
-                sprintf(info, "MODE: %s, ObjName: \"%s\", Zoom: [%.2f]", modeStrs[mode],
+                sprintf(info, "MODE: %s, ObjName: \"%s\", Zoom: [%.2f], Scale: [%.2f]", modeStrs[mode],
                         curObjElmt == NULL ? "No objects!" : ((Object *)curObjElmt->data)->name,
-                        camera.zoom);
+                        camera.zoom, ((Object *)curObjElmt->data)->scale);
                 if (curObjElmt != NULL)
                 {
                     Object *curObj = (Object *)curObjElmt->data;
@@ -539,7 +554,6 @@ int main(void)
                         }
                         if (IsKeyPressed(KEY_F) && levelObjList->size > 0)
                         {
-                            // TODO: save the map objectList
                             SaveMap(world, levelObjList);
                         }
                         if (IsKeyPressed(KEY_H))
@@ -654,14 +668,14 @@ int main(void)
         if (displayHelp)
         {
             float curse = 0;
-            for (int i = 0; i < ARRAY_LEN(help[mode]); ++i)
+            for (int i = 0; i < (int)ARRAY_LEN(help[mode]); ++i)
             {
                 curse = 40 + (i * (FONTLG + 10));
                 if (help[mode][i] != NULL)
                     DrawText(help[mode][i], 4, curse, FONTLG, RAYWHITE);
             }
             curse += FONTLG + 10;
-            for (int i = 0; i < ARRAY_LEN(commonHelp); ++i)
+            for (int i = 0; i < (int)ARRAY_LEN(commonHelp); ++i)
             {
                 DrawText(commonHelp[i], 4, curse + (i * (FONTLG + 10)), FONTLG, RAYWHITE);
             }
@@ -717,6 +731,16 @@ int main(void)
             };
             DrawText(numinput, input2.x + 2, input2.y, FONTLG, WHITE);
             DrawRectangleLines(input2.x, input2.y, input2.width, input2.height, GREEN);
+            if (mode == 0) {
+                Rectangle input3 = (Rectangle) {
+                    .x = input1.width + input2.width + 4,
+                    .y = input1.y,
+                    .width = fontvec.x *strlen(actinput),
+                    .height = input1.height,
+                };
+                DrawText(actinput, input3.x + 2, input3.y, FONTLG, WHITE);
+                DrawRectangleLines(input3.x, input3.y, input3.width, input3.height, GREEN);
+            }
         }
         EndDrawing();
     }
@@ -726,14 +750,6 @@ int main(void)
     free(numinput);
 }
 
-void DestroySpriteRect(SpriteRect *sr)
-{
-    printf("INFO: SpriteRect %s destroying\n", sr->name);
-    free(sr->filename);
-    free(sr->name);
-    free(sr);
-}
-
 void DestroySheet(SpriteSheet *ss)
 {
     printf("INFO: SpriteSheet %s destroying\n", ss->filename);
@@ -741,16 +757,6 @@ void DestroySheet(SpriteSheet *ss)
     free(ss->filename);
     free(ss->basename);
     free(ss);
-}
-
-void DestroyCollider(Collider *collider)
-{
-    free(collider);
-}
-
-void DestroyObject(Object *obj)
-{
-    free(obj->name);
 }
 
 static void DrawStoredObjsList(DList *objectList, DListElmt *selected, char **objtypes)
@@ -920,8 +926,13 @@ static void DrawStoredSheetSpriteRects(SpriteSheet *sheet)
                                  .height = outdim},
                              sel ? 2.0f : 1.0f, sel ? GREEN : BLACK);
         DrawText(sr->name, SCREEN_WIDTH - outdim + EL_PADDING, yidx + EL_PADDING, 20, WHITE);
+        char *cldrtxt = (char*)malloc(16);
+        Vector2 fontvec = MeasureTextEx(GetFontDefault(), sr->name, FONTSM, 2.0f);
+        sprintf(cldrtxt, "Colliders: %d", sr->colliders->size);
+        DrawText(cldrtxt, SCREEN_WIDTH - outdim + EL_PADDING, yidx + fontvec.y + EL_PADDING, FONTSM, WHITE);
         yidx += outdim;
         el = el->next;
+        free(cldrtxt);
     }
 }
 
@@ -945,6 +956,7 @@ static void PlaceObjectInWorld(List *placedObjects, Object *obj)
     objcpy->position = obj->position;
     objcpy->scale = obj->scale;
     objcpy->name = obj->name;
+    objcpy->type = obj->type;
     objcpy->rotation = obj->rotation;
     objcpy->sprites = obj->sprites;
     objcpy->curSpriteEl = obj->curSpriteEl;
@@ -1088,18 +1100,24 @@ static bool GetTextInput(char *input, bool *clearBuffer, int *charCount)
     return false;
 }
 
-static void GetNumInput(int *input, int min, int max)
+static bool GetNumInput(int *input, int min, int max, bool shift)
 {
-    if (IsKeyPressed(KEY_UP))
+    if ((shift && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_UP)) || 
+        (!shift && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_UP)))
     {
         *input = Clamp(*input + 1, min, max);
     }
-    if (IsKeyPressed(KEY_DOWN))
+    if ((shift && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_DOWN)) || 
+        (!shift && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_DOWN)))
     {
         *input = Clamp(*input - 1, min, max);
     }
+    if (IsKeyPressed(KEY_ENTER)) {
+        return true;
+    }
+    return false;
 }
-static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int frameCount)
+static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int frameCount, int action)
 {
 
     SpriteRect *newRect = (SpriteRect *)malloc(sizeof(SpriteRect));
@@ -1117,6 +1135,7 @@ static void StoreSpriteRect(SpriteSheet *curSheet, Rectangle r, char *name, int 
     newRect->frameCounter = 0;
     newRect->frameIdx = 0;
     newRect->texture = curSheet->t;
+    newRect->action = action;
     dlist_ins_next(curSheet->sheetRects, dlist_tail(curSheet->sheetRects), newRect);
     curSheet->selectedRect = dlist_tail(curSheet->sheetRects);
 }
@@ -1125,7 +1144,7 @@ static void InitSpriteSheets(const char *folder, DList *sheetList)
 {
     FilePathList spritesheets = LoadDirectoryFilesEx(folder, ".png", true);
     // initialize all the spritesheets
-    for (int i = 0; i < spritesheets.count; ++i)
+    for (int i = 0; i < (int)spritesheets.count; ++i)
     {
         if (strcmp(GetFileExtension(spritesheets.paths[i]), ".png"))
             continue;
@@ -1135,7 +1154,7 @@ static void InitSpriteSheets(const char *folder, DList *sheetList)
         sheet->t = LoadTexture(spritesheets.paths[i]);
         sheet->selectedRect = NULL;
         DList *rectlist = (DList *)malloc(sizeof(DList));
-        dlist_init(rectlist, (void *)DestroySpriteRect);
+        dlist_init(rectlist, (void *)DestroySprite);
         sheet->sheetRects = rectlist;
         sheet->offset = (Vector2){
             SCREEN_WIDTH / 2 - sheet->t.width / 2,
@@ -1236,7 +1255,9 @@ static void SaveMap(Rectangle world, List *levelObjList)
         fprintf(stderr, "ERROR: Failed to open file %s\n", filename);
         return;
     }
+    printf("Saving %s\n", filename);
     fwrite(&world, sizeof(Rectangle), 1, out);
+    fwrite(&levelObjList->size, sizeof(int), 1, out);
     ListElmt *objEl = list_head(levelObjList);
     while (objEl != NULL)
     {
@@ -1261,6 +1282,7 @@ static void SaveMap(Rectangle world, List *levelObjList)
             fwrite(sprite->filename, shtnamelen, 1, out);
             fwrite(&sprite->frameCount, sizeof(int), 1, out);
             fwrite(&sprite->r, sizeof(Rectangle), 1, out);
+            fwrite(&sprite->action, sizeof(int), 1, out);
             fwrite(&sprite->colliders->size, sizeof(int), 1, out);
             ListElmt *colliderEl = list_head(sprite->colliders);
             while (colliderEl != NULL)
@@ -1282,6 +1304,7 @@ static void SaveMap(Rectangle world, List *levelObjList)
         objEl = objEl->next;
     }
     fclose(out);
+    printf("Saved %s\n", filename);
 }
 
 static void SelectionCycle(DList *list, DListElmt **current, int key)

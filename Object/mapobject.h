@@ -6,16 +6,15 @@
 #include "../Datastructs/linkedlist.h"
 #include "../Datastructs/doublelinkedlist.h"
 #include "../Datastructs/set.h"
-#include "../Sprite/sprite.h"
 
 #define MAX_VELOCITY 10.0f
 #define ACCEL 0.4f
-#define JMP_ACCL 3.0f
+#define JMP_ACCL -3.0f
 #define MAX_ROTATE 359.0f
 #define ROTATE_ACCEL 0.2f
 #define MAX_GRAVITY 14.0f
 // #define MAX_GRAVITY     14.0f
-#define MAX_JMP_VEL 9.0f
+#define MAX_JMP_VEL -9.0f
 #define MAX_JMP_CNT 15
 
 typedef enum objtype_ {
@@ -52,34 +51,15 @@ typedef struct Object_ {
     bool attack;
     bool reverse;
     bool alive;
+    int jmpcnt;
 } Object;
-
-typedef struct Line_ {
-    Vector2 p1;
-    Vector2 p2;
-} Line;
-
-typedef enum cldrtype_ {
-    RectType,
-    LineType,
-} cldrtype;
-
-typedef struct Collider_ {
-    cldrtype type;
-    union {
-        Rectangle rect;
-        Line line;
-    } data;
-} Collider;
 
 void DestroyObject(Object *o);
 
-void DestroyCollider(Collider *collider);
-
-void UpdateObject(Object *o);
+void UpdateMapObject(Object *o);
 
 void SetAction(Object *o, int action);
 
-void DrawObject(Object *o);
+void DrawMapObject(Object *o);
 
 #endif // MAPOBJECT_H

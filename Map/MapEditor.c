@@ -1,8 +1,10 @@
- #include <raylib.h>
+
+#include <raylib.h>
 #include <raymath.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "../Datastructs/linkedlist.h"
 #include "../Datastructs/doublelinkedlist.h"
 #include "../Datastructs/set.h"
@@ -126,7 +128,7 @@ int main(void)
             "'UP/DOWN'=Scale",
             "'RIGHT/LEFT'=Rotate",
             "'LEFTCLICK'=Place Object",
-            "'HOME/END'=Prev/Next Object",
+            "'PGUP/PGDN'=Prev/Next Object",
             "'F'=Save map",
         },
     };
@@ -329,7 +331,7 @@ int main(void)
                               curSheet->t.width,
                               curSheet->t.height,
                           });
-                if (IsKeyPressed(KEY_R))
+                if (IsKeyPressed(KEY_R) && r.width > 0 && r.height > 0)
                 {
                     number = 1;
                     actNum = 0;
@@ -403,8 +405,8 @@ int main(void)
                         else
                         {
                             tmpCldr->type = LineType;
-                            tmpCldr->data.line.p1 = (Vector2){.x = l.p1.x, .y = l.p1.y};
-                            tmpCldr->data.line.p2 = (Vector2){.x = l.p2.x, .y = l.p2.y};
+                            tmpCldr->data.line.p1 = Vector2Subtract(l.p1, spriteOffset);
+                            tmpCldr->data.line.p2 = Vector2Subtract(l.p2, spriteOffset);
                             list_ins_next(sptr->colliders, list_tail(sptr->colliders), tmpCldr);
                         }
                     }
@@ -602,6 +604,10 @@ int main(void)
                     .y = (SCREEN_HEIGHT / 2) - (tmprect->r.height / 2),
                     .width = tmprect->r.width,
                     .height = tmprect->r.height};
+                Vector2 spriteOffset = (Vector2) {
+                    .x = destination.x,
+                    .y = destination.y,
+                };
                 DrawTexturePro(tmprect->texture, tmprect->r, destination, (Vector2){0}, 0.0f, WHITE);
                 DrawRectangleLinesEx(destination, 1.0f, BLACK);
                 ListElmt *i = (ListElmt *)tmprect->colliders->head;
@@ -620,7 +626,9 @@ int main(void)
                     }
                     if (tmp->type == LineType)
                     {
-                        DrawLineBezier(tmp->data.line.p1, tmp->data.line.p2, 1.0f, GREEN);
+                        DrawLineBezier(
+                            Vector2Add(spriteOffset, tmp->data.line.p1), 
+                            Vector2Add(spriteOffset, tmp->data.line.p2), 1.0f, GREEN);
                     }
                     i = i->next;
                 }
@@ -988,14 +996,16 @@ static void DrawObject(Object *obj)
     }
     SpriteRect *sprite = (SpriteRect *)obj->curSpriteEl->data;
 
-    Rectangle destination = (Rectangle){
-        .width = sprite->r.width * obj->scale / sprite->frameCount,
-        .height = sprite->r.height * obj->scale,
+    Vector2 spriteOffset = (Vector2) {
         .x = obj->position.x - sprite->r.width * obj->scale / sprite->frameCount / 2,
         .y = obj->position.y - sprite->r.height * obj->scale / 2,
     };
-
-    Vector2 origin = (Vector2){0};
+    Rectangle destination = (Rectangle){
+        .width = sprite->r.width * obj->scale / sprite->frameCount,
+        .height = sprite->r.height * obj->scale,
+        .x = spriteOffset.x,
+        .y = spriteOffset.y
+    };
 
     Rectangle dr = (Rectangle){
         .x = sprite->r.x + (sprite->r.width / sprite->frameCount * sprite->frameIdx),
@@ -1003,8 +1013,30 @@ static void DrawObject(Object *obj)
         .width = sprite->r.width / sprite->frameCount,
         .height = sprite->r.height,
     };
+
+    Vector2 origin = (Vector2){0};
+
+    Collider *cldrFirst = list_head(sprite->colliders)->data;
+
     DrawRectangleLinesEx(destination, 1.0f, GREEN);
     DrawTexturePro(sprite->texture, dr, destination, origin, obj->rotation, WHITE);
+    if (cldrFirst->type == RectType) {
+        Rectangle cldr = cldrFirst->data.rect;
+        Rectangle cr = (Rectangle) {
+            .x = spriteOffset.x + 
+                (cldr.x * obj->scale),
+            .y = spriteOffset.y + 
+                (cldr.y * obj->scale),
+            .width = cldr.width * obj->scale,
+            .height = cldr.height * obj->scale,
+        };
+        DrawRectangleLinesEx(cr, 1.0f, YELLOW);
+    } else if (cldrFirst->type == LineType) {
+        DrawLineBezier(
+            Vector2Add(spriteOffset, Vector2Scale(cldrFirst->data.line.p1, obj->scale)), 
+            Vector2Add(spriteOffset, Vector2Scale(cldrFirst->data.line.p2, obj->scale)), 1.0f, GREEN);
+    }
+    DrawCircleV(obj->position, 2.0f, YELLOW);
 }
 
 static void RectInput(Rectangle *r, Vector2 mouseWorldPos, Rectangle bounds)
@@ -1248,14 +1280,19 @@ static void DrawLoadedTextures(DList *textures, DListElmt *selected)
 
 static void SaveMap(Rectangle world, List *levelObjList)
 {
-    const char *filename = "Map.bin";
-    FILE *out = fopen(filename, "w");
+    const char *relpath = "/build/Map.bin";
+    char *buffer = getcwd(NULL, 0);
+    size_t pathlen = strlen(buffer) + strlen(relpath) + 1;
+    char *outfile = (char *)malloc(pathlen);
+    sprintf(outfile, "%s%s\n", buffer, relpath);
+    outfile[pathlen] = '\0';
+    FILE *out = fopen(outfile, "w");
     if (out == NULL)
     {
-        fprintf(stderr, "ERROR: Failed to open file %s\n", filename);
+        fprintf(stderr, "ERROR: Failed to open file %s\n", outfile);
         return;
     }
-    printf("Saving %s\n", filename);
+    printf("Saving %s\n", outfile);
     fwrite(&world, sizeof(Rectangle), 1, out);
     fwrite(&levelObjList->size, sizeof(int), 1, out);
     ListElmt *objEl = list_head(levelObjList);
@@ -1304,7 +1341,7 @@ static void SaveMap(Rectangle world, List *levelObjList)
         objEl = objEl->next;
     }
     fclose(out);
-    printf("Saved %s\n", filename);
+    printf("Saved %s\n", outfile);
 }
 
 static void SelectionCycle(DList *list, DListElmt **current, int key)

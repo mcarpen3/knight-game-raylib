@@ -97,3 +97,12 @@ int set_is_equal(const Set *set1, const Set *set2) {
         return 0;
     return set_is_subset(set1, set2);
 }
+
+void *set_get_member(Set *set, const void *data) {
+    DListElmt *member;
+    for (member = dlist_head(set); member != NULL; member = dlist_next(member)) {
+        if (set->match(data, dlist_data(member))) 
+            return dlist_data(member);
+    }
+    return NULL;
+}

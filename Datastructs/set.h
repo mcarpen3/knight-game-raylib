@@ -19,6 +19,7 @@ int set_difference(Set *setd, const Set *set1, const Set *set2);
 int set_is_member(const Set *set, const void *data);
 int set_is_subset(const Set *set1, const Set *set2);
 int set_is_equal(const Set *set1, const Set *set2);
+void *set_get_member(Set *set, const void *data);
 
 #define set_size(set) ((set)->size)
 

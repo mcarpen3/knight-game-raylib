@@ -1,7 +1,6 @@
-spritesheets
+resources
 test
 .vscode
 main-game
 build
-map/*.bin
 experiments

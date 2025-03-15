@@ -1,7 +1,8 @@
 #include <raylib.h>
 #include <stdio.h>
-#include "../datastructs/linkedlist.h"
-#include "../object/mapobject.h"
+#include "../Datastructs/linkedlist.h"
+#include "../Object/mapobject.h"
+#include "../Sprite/sprite.h"
 
 void DestroyRect(Rectangle *r) {
     free(r);

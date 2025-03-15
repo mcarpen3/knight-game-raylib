@@ -38,7 +38,12 @@ void LoadMap(DList *objList, Rectangle *world) {
         "SlideTransitionStart","TurnAround","WallClimb",
         "WallClimbNoMovement","WallHang","WallSlide"
     };
-    const char *infile = "./Map/Map.bin";
+    const char *relpath = "/build/Map.bin";
+    char *buffer = getcwd(NULL, 0);
+    size_t pathlen = strlen(buffer) + strlen(relpath) + 1;
+    char *infile = (char *)malloc(pathlen);
+    sprintf(infile, "%s%s\n", buffer, relpath);
+    infile[pathlen] = '\0';
     FILE *in = fopen(infile, "r");
     if (in == NULL) {
         fprintf(stderr, "ERROR: Failed to load file %s\n", infile);
@@ -67,6 +72,7 @@ void LoadMap(DList *objList, Rectangle *world) {
         o1->attack = false;
         o1->vel = (Vector2){0.0f, 0.0f};
         o1->ov = (ObjVelLims) {0.0f, 0.0f, world->width, world->height};
+        o1->jmpcnt = 0;
         o1->sprites = (DList *)malloc(sizeof(DList));
         dlist_init(o1->sprites, (void *)DestroySprite);
         for (sidx = 0; sidx < sprtsSize; ++sidx) {
@@ -79,7 +85,9 @@ void LoadMap(DList *objList, Rectangle *world) {
             s1->filename = (char *)malloc(shtNameLen + 1);
             fread(s1->filename, shtNameLen, 1, in);
             s1->filename[shtNameLen] = '\0';
-            fread(&s1->frameCount, sizeof(float), 1, in);
+            fread(&s1->frameCount, sizeof(int), 1, in);
+            s1->frameIdx = 0;
+            s1->frameCounter = 0;
             fread(&s1->r, sizeof(Rectangle), 1, in);
             fread(&s1->action, sizeof(int), 1, in);
             fread(&colSize, sizeof(int), 1, in);
@@ -90,11 +98,13 @@ void LoadMap(DList *objList, Rectangle *world) {
                 fread(&c1->type, sizeof(int), 1, in);
                 if (c1->type == RectType) {
                     fread(&c1->data.rect, sizeof(Rectangle), 1, in);
+                    c1->data.rect.x -= cidx * s1->r.width / s1->frameCount;
                 } else if(c1->type == LineType) {
                     fread(&c1->data.line, sizeof(Line), 1, in);
                 }
                 list_ins_next(s1->colliders, list_tail(s1->colliders), c1);
             }
+            s1->curCldrEl = list_head(s1->colliders);
             dlist_ins_next(o1->sprites, list_tail(o1->sprites), s1);
         }
         o1->curSpriteEl = dlist_head(o1->sprites);
@@ -107,15 +117,20 @@ void LoadMap(DList *objList, Rectangle *world) {
         Object *o = (Object *)objEl->data;
         // printf("obj: %s, type: %d, pos: { %f, %f }, rot: %f\n", 
         //     o->name, o->type, o->position.x, o->position.y, o->rotation);
-        printf("%s%s, type: %d, pos: { %f, %f }, rot: %f, scl: %f, sprts: %d\n", 
-            "obj: ", o->name, o->type, o->position.x, 
+        printf("%s%s, type: %s, pos: { %f, %f }, rot: %f, scl: %f, sprts: %d\n", 
+            "obj: ", o->name, objTypeNames[o->type], o->position.x, 
             o->position.y, o->rotation, o->scale,
         o->sprites->size);
         DListElmt *sprtEl;
         for (sprtEl = dlist_head(o->sprites); sprtEl != NULL; sprtEl = dlist_next(sprtEl)) {
             SpriteRect *sr1 = dlist_data(sprtEl);
-            printf("%*s, %s, r:{%f,%f,%f,%f}, %s\n", 
-                (int)(strlen(sr1->name)) + 2, sr1->name, sr1->filename, sr1->r.x,sr1->r.y, sr1->r.width, sr1->r.height, actTypeNames[sr1->action]);
+            printf("%*s, %s, r:{%f,%f,%f,%f}, %s, fc: %d\n", 
+                (int)(strlen(sr1->name)) + 2, sr1->name, 
+                    sr1->filename, 
+                    sr1->r.x,sr1->r.y, 
+                    sr1->r.width, 
+                    sr1->r.height, 
+                    actTypeNames[sr1->action], sr1->frameCount);
             ListElmt *colEl;
             for (colEl = list_head(sr1->colliders); colEl != NULL; colEl = list_next(colEl)) {
                 Collider *c1 = list_data(colEl);

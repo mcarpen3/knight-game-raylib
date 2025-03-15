@@ -1,10 +1,11 @@
 #include "raylib.h"
-#include "./object/object.h"
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include <math.h>
-#include "experiments/LoadWorld.c"
-#include "datastructs/linkedlist.h"
+#include "Map/LoadMap.h"
+#include "World/TextureSource.h"
 
 #define MAX_FRAME_SPEED     15
 #define MIN_FRAME_SPEED      1
@@ -13,125 +14,91 @@
 #define BG_OFF_SCALAR       0.4f
 #define SCREEN_WIDTH        1280
 #define SCREEN_HEIGHT       720
-#define WORLD_WIDTH         SCREEN_WIDTH * 4
-static void DestroySpriteRects(SpriteRect *spriteRect) {
-    UnloadTexture(spriteRect->texture);
-    free(spriteRect->filename);
-    free(spriteRect);
-}
+
 int main(void)
 {
     // Initialization
-    //--------------------------------------------------------------------------------------
-    srand(time(NULL));
-    const float groundHeight = 128.0f;
-    char *info = (char *)malloc(256);
-
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Knight HERO game!!!!");
     // NOTE: Textures MUST be loaded after Window initialization (OpenGL context is required)
-    Object *o = ObjectFactory("knight", (Vector2){(float)SCREEN_WIDTH/2, (float)SCREEN_HEIGHT}, (Vector2){120.0f, 80.0f});
-    Object *skeleton = ObjectFactory("skeleton", (Vector2){(float)SCREEN_WIDTH / 3, (float)SCREEN_HEIGHT /2}, (Vector2){64.0f, 48.0f});
-    Object *curObj = o;
-    List *envList = (List *)malloc(sizeof(List));
-    List *envColliderLines = (List *)malloc(sizeof(List));
-    List *envColliderRects = (List *)malloc(sizeof(List));
-    list_init(envList, (void *)DestroySpriteRects);
-    LoadWorld(envList, envColliderLines, envColliderRects);
-    Texture2D bg = LoadTexture("./spritesheets/background/background.png");
+    DList *objList = (DList *)malloc(sizeof(DList));
+    Set *textures = (Set *)malloc(sizeof(Set));
+    set_init(textures, &matchTexture, (void *)DestroyTextureSource);
+    dlist_init(objList, (void *)DestroyObject);
+    Rectangle world = (Rectangle){0};
+    printf("INFO: ----- LOADMAP -----\n");
+    LoadMap(objList, &world);
+    printf("INFO: ----- END LOADMAP -\n");
+    DListElmt *objEl = dlist_head(objList);
+    Object *playerObj;
+    char *info = (char *)malloc(64);
+
+    // populate the world!!!!!
+    while (objEl != NULL) {
+        printf("INFO: OBJECT: Loading %s\n", ((Object *)objEl->data)->name);
+        if (((Object *)objEl->data)->type == Player) {
+            playerObj = (Object *)objEl->data;
+        }
+        DListElmt *sprtEl = dlist_head(((Object *)objEl->data)->sprites);
+        while (sprtEl != NULL) {
+            DListElmt *textureEl = dlist_head(textures);
+            TextureSource *ts;
+            ts = (TextureSource *)malloc(sizeof(TextureSource));
+            ts->filename = strdup(((SpriteRect *)sprtEl->data)->filename);
+            if (set_insert(textures, ts) != -1) {
+                ts->texture = LoadTexture(ts->filename);
+                ((SpriteRect *)sprtEl->data)->texture = ts->texture;
+            } else {
+                free(ts);
+                // find the texture
+                while (textureEl != NULL) {
+                    char *file1 = ((TextureSource *)textureEl->data)->filename;
+                    char *file2 = ((SpriteRect *)sprtEl->data)->filename;
+                    if (!(strcmp(file1, file2))) {
+                        ((SpriteRect *)sprtEl->data)->texture = ((TextureSource *)textureEl->data)->texture;
+                        break;
+                    }
+                }
+            }
+            sprtEl = sprtEl->next;
+        }
+        objEl = objEl->next;
+    }
     Camera2D camera = {0};
-    camera.target = (Vector2){o->pos.x + o->c.width / 2, o->pos.y + o->c.height / 2};
-    camera.offset = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT - groundHeight};
+    camera.target = playerObj->position;
+    camera.offset = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
     camera.rotation = 0.0f;
-    camera.zoom = 1.0f;
-    float bgOffset = 0.0f;
+    camera.zoom = 0.5f;
+    printf("INFO: PLAYER: {%.2f, %.2f}\n", playerObj->position.x, playerObj->position.y);
+    Collider *curCldr = (Collider *)((SpriteRect *)playerObj->curSpriteEl->data)->curCldrEl->data;
+    printf("INFO: SPRTRECT: {%.2f, %.2f, %.2f, %.2f}\n", curCldr->data.rect.x, curCldr->data.rect.y, curCldr->data.rect.width, curCldr->data.rect.height);
     SetTargetFPS(60);             // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
     // Main game loop
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
+        sprintf(info, "%.2f, %.2f, vel: %.2f\n", playerObj->position.x, playerObj->position.y, playerObj->vel.x);
         // Update
         //----------------------------------------------------------------------------------
-        if (IsKeyPressed(KEY_S)) {
-            if (curObj == o) {
-                curObj = skeleton;
-            } else {
-                curObj = o;
-            }
-        }
-        if (IsKeyPressed(KEY_ENTER)) {
-            SaveObjectParams(curObj);
-        }
-        if (IsKeyDown(KEY_LEFT_CONTROL)) {
-            ScaleSprite(curObj);
-        } else if (IsKeyDown(KEY_LEFT_SHIFT)) {
-            ScaleCollider(curObj);
-        } else if (IsKeyDown(KEY_LEFT_ALT)) {
-            ShiftColliderOffset(curObj);
-        } else {
-            if (IsKeyDown(KEY_RIGHT)) {
-                Forward(curObj);
-            }
-            else if (IsKeyDown(KEY_LEFT)) {
-                Backward(curObj);
-            } 
-            else Decel(curObj);
-            if (IsKeyDown(KEY_UP)) Jump(curObj);
-            if (IsKeyDown(KEY_SPACE)) Attack(curObj);
-            if (IsKeyUp(KEY_SPACE) && IsKeyUp(KEY_UP)) {
-                Rest(curObj);
-            }
-        }
-        // EnvCollision(o, rs, 3);
-        EnemyCollision(o, skeleton);
-        Update(o);
-        Update(skeleton);
-
-        if (o->pos.x <= SCREEN_WIDTH / 2) {
-            camera.target = (Vector2){SCREEN_WIDTH / 2, SCREEN_HEIGHT - groundHeight};
-        } else {
-            camera.target = (Vector2){o->pos.x, SCREEN_HEIGHT - groundHeight};
-            if (o->vel.x > 0) {
-                bgOffset -= BG_OFF_SCALAR;
-            } else if (o->vel.x < 0) {
-                bgOffset += BG_OFF_SCALAR;
-            }
-        }
-        sprintf(info, "vel: y: %f, jmp: %d", o->vel.y, o->jc);
+        UpdateMapObject(playerObj);
+        camera.target = playerObj->position;
         // Draw
         //----------------------------------------------------------------------------------
         BeginDrawing();
             ClearBackground(DARKBLUE);
-            // DrawText("HOLD L_CTRL AND USE ARROWS TO SCALE SPRITE", 2, 60 + 40 + 2, 40, WHITE);
-            // DrawText("HOLD L_ALT AND USE ARROWS TO SCALE COLLIDER", 2, 60 + 40 * 2 + 2, 40, WHITE);
-            // DrawText("HOLD L_SHIFT AND USE ARROWS TO OFFSET COLLIDER", 2, 60 + 40 * 3 + 2, 40, WHITE);
-            float bgXIdx = 0;
-            while(bgXIdx <= WORLD_WIDTH) {
-                Rectangle bgrec = (Rectangle){0, 0, bg.width, bg.height};
-                Rectangle bgrecDest = (Rectangle){bgXIdx + bgOffset, 0, SCREEN_WIDTH, SCREEN_HEIGHT - groundHeight};
-                DrawTexturePro(bg, bgrec, bgrecDest, (Vector2){0.0f, 0.0f}, 0.0f, WHITE);
-                bgXIdx += SCREEN_WIDTH;
-            }
             BeginMode2D(camera);
-                Draw(o);
-                Draw(skeleton);
-                ListElmt *envItems = envList->head;
-                while(envItems != NULL) {
-                    SpriteRect *tmp = (SpriteRect *)envItems->data;
-                    DrawTexturePro(tmp->texture, tmp->src, tmp->dest, (Vector2){
-                        .x = tmp->dest.width / 2,
-                        .y = tmp->dest.height / 2
-                    }, tmp->rotation, WHITE);
-                    envItems = envItems->next;
-                }
+            DrawRectangleRec(world, BROWN);
+            DrawMapObject(playerObj);
+            for (objEl = dlist_head(objList); objEl != NULL; objEl = dlist_next(objEl)) {
+                DrawMapObject((Object *)objEl->data);
+            }
+            DrawCircleV(playerObj->position, 10.0f, RED);
             EndMode2D();
-            DrawText(info, 2, 60, 40, WHITE);
+            DrawText(info, 0, 0, 30.0f, WHITE);
         EndDrawing();
         //----------------------------------------------------------------------------------
     }
     // De-Initialization
     //--------------------------------------------------------------------------------------
-    Destroy(o);
-    UnloadTexture(bg);
     CloseWindow();                // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
     return 0;

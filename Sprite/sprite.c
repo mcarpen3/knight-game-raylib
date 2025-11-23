@@ -1,5 +1,4 @@
 #include "sprite.h"
-#include "../util/raylibdebug.h"
 
 void DestroyCollider(Collider *collider)
 {

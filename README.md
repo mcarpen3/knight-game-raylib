@@ -7,6 +7,6 @@
 - Run `make rungame` or `make runmapeditor`
   - This thing is buggy and unfinished!!!!
 - Use Mapeditor to create a map 
-![alt text](https://github.com/mcarpe3/knight-game-raylib/main/knight-climb.png?raw=true)
-![alt text](https://github.com/mcarpe3/knight-game-raylib/main/DefineColliders.png?raw=true)
-![alt text](https://github.com/mcarpe3/knight-game-raylib/main/PlaceObject.gif?raw=true)
+![alt text](https://github.com/mcarpen3/knight-game-raylib/master/knight-climb.png?raw=true)
+![alt text](https://github.com/mcarpen3/knight-game-raylib/master/DefineColliders.png?raw=true)
+![alt text](https://github.com/mcarpen3/knight-game-raylib/master/PlaceObject.gif?raw=true)

@@ -23,9 +23,7 @@ build/MapEditor: Map/MapEditor.c build/linkedlist.o build/doublelinkedlist.o bui
 	gcc -Wall -Wextra -ggdb Map/MapEditor.c build/linkedlist.o \
 	build/doublelinkedlist.o build/mapobject.o build/set.o build/sprite.o \
 	-o build/MapEditor \
-	$(RAYLIB_GCC_ARGS) && \
-	export LD_LIBRARY_PATH=/home/matt/raylib-5.0_linux_amd64/lib &&\
-	build/MapEditor
+	$(RAYLIB_GCC_ARGS)
 runmapeditor: build/MapEditor
 	export LD_LIBRARY_PATH=/home/matt/raylib-5.0_linux_amd64/lib && build/MapEditor
 rungame: build/main-game

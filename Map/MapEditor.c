@@ -473,7 +473,7 @@ int main(void)
                 // object place mode
                 sprintf(info, "MODE: %s, ObjName: \"%s\", Zoom: [%.2f], Scale: [%.2f]", modeStrs[mode],
                         curObjElmt == NULL ? "No objects!" : ((Object *)curObjElmt->data)->name,
-                        camera.zoom, ((Object *)curObjElmt->data)->scale);
+                        camera.zoom, curObjElmt == NULL ? 0.0 : ((Object *)curObjElmt->data)->scale);
                 if (curObjElmt != NULL)
                 {
                     Object *curObj = (Object *)curObjElmt->data;
@@ -892,7 +892,7 @@ static void DrawStoredSheetSpriteRects(SpriteSheet *sheet)
     int curIdx = 1;
     float yidx = 0.0f;
     float xrule = SCREEN_WIDTH - outdim;
-    if (sheet->sheetRects->size == 0)
+    if (!sheet || sheet->sheetRects->size == 0)
     {
         DrawText("No rects!", xrule, yidx, 20, WHITE);
         return;
